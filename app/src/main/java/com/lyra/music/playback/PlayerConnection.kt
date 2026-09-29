@@ -15,6 +15,7 @@ import com.lyra.music.playback.MediaItems.toMediaItem
 import com.lyra.music.playback.MediaItems.toSong
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,6 +25,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.guava.await
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 
 data class PlayerUiState(
@@ -104,7 +106,7 @@ class PlayerConnection(
         if (songs.isEmpty()) return
         _state.update { it.copy(playingFrom = from) }
         command { c ->
-            c.sendCustomCommand(LyraCommands.NEW_QUEUE, Bundle.EMPTY)
+            c.sendCustomCommand(LyraCommands.NEW_QUEUE, Bundle().apply { putBoolean(LyraCommands.ARG_SHUFFLE, shuffle) })
             val index = if (shuffle) songs.indices.random() else startIndex.coerceIn(0, songs.size - 1)
             c.shuffleModeEnabled = shuffle
             c.setMediaItems(songs.map { it.toMediaItem(downloads.localCover(it.id)) }, index, 0)
@@ -149,6 +151,20 @@ class PlayerConnection(
         if (c.playbackState == Player.STATE_IDLE) c.prepare()
         if (c.playbackState == Player.STATE_ENDED) c.seekToDefaultPosition()
         if (c.isPlaying) c.pause() else c.play()
+    }
+
+    /**
+     * Ejecuta [block] con el controlador ya conectado (widget, receptores…).
+     * El MediaController solo admite llamadas desde el hilo principal.
+     */
+    suspend fun <T> withController(block: (MediaController) -> T): T =
+        withContext(Dispatchers.Main.immediate) { block(controller()) }
+
+    /** Sigue donde se quedó (al volver a conectar los auriculares con la app cerrada). */
+    suspend fun resumeAfterReconnect() = withController { c ->
+        if (c.mediaItemCount == 0 || c.playWhenReady) return@withController
+        if (c.playbackState == Player.STATE_IDLE) c.prepare()
+        c.play()
     }
 
     fun seekTo(positionMs: Long) = command { c ->

@@ -76,7 +76,7 @@ fun AlbumScreen(id: String, contentPadding: PaddingValues) {
                                 actions.message(if (saved) "Quitado de tu biblioteca" else "Guardado en tu biblioteca")
                             },
                         )
-                        DownloadAllButton(page.songs)
+                        DownloadAllButton(page.songs, album.title)
                         OutlineIconButton(Icons.AutoMirrored.Rounded.PlaylistAdd, "Añadir a playlist", onClick = { actions.addToPlaylist = page.songs })
                     }
                 }

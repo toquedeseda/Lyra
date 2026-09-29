@@ -31,6 +31,10 @@ data class AppSettings(
     val normalizeVolume: Boolean = true,
     val skipSilence: Boolean = false,
     val infiniteRadio: Boolean = true,
+    /** La radio evita repetir artista seguido y lo escuchado hace poco. */
+    val radioNoRepeat: Boolean = true,
+    /** Al conectar auriculares o el Bluetooth del coche, sigue sonando lo último. */
+    val resumeOnConnect: Boolean = true,
     // Ecualizador (10 bandas, en dB)
     val eqEnabled: Boolean = false,
     val eqPreset: String = "flat",
@@ -40,6 +44,9 @@ data class AppSettings(
     val downloadQuality: AudioQuality = AudioQuality.HIGH,
     val downloadWifiOnly: Boolean = false,
     val autoDownloadLiked: Boolean = false,
+    /** Descargas en la carpeta visible Música/Lyra (M4A con carátula) en vez de ocultas. */
+    val downloadsVisible: Boolean = true,
+    val folderMigrationDone: Boolean = false,
     // Isla
     val islandEnabled: Boolean = false,
     val islandMode: IslandMode = IslandMode.AUTO,
@@ -92,6 +99,8 @@ class SettingsRepository(context: Context, scope: CoroutineScope) {
         normalizeVolume = p[K.normalize] ?: true,
         skipSilence = p[K.skipSilence] ?: false,
         infiniteRadio = p[K.infiniteRadio] ?: true,
+        radioNoRepeat = p[K.radioNoRepeat] ?: true,
+        resumeOnConnect = p[K.resumeOnConnect] ?: true,
         eqEnabled = p[K.eqEnabled] ?: false,
         eqPreset = p[K.eqPreset] ?: "flat",
         eqBands = p[K.eqBands]?.split(',')?.mapNotNull { it.toFloatOrNull() }?.takeIf { it.size == 10 }
@@ -100,6 +109,8 @@ class SettingsRepository(context: Context, scope: CoroutineScope) {
         downloadQuality = enumOr(p[K.downloadQuality], AudioQuality.HIGH),
         downloadWifiOnly = p[K.wifiOnly] ?: false,
         autoDownloadLiked = p[K.autoDownloadLiked] ?: false,
+        downloadsVisible = p[K.downloadsVisible] ?: true,
+        folderMigrationDone = p[K.folderMigrationDone] ?: false,
         islandEnabled = p[K.islandEnabled] ?: false,
         islandMode = enumOr(p[K.islandMode], IslandMode.AUTO),
         islandOffsetX = p[K.islandX] ?: 0,
@@ -120,6 +131,8 @@ class SettingsRepository(context: Context, scope: CoroutineScope) {
         p[K.normalize] = s.normalizeVolume
         p[K.skipSilence] = s.skipSilence
         p[K.infiniteRadio] = s.infiniteRadio
+        p[K.radioNoRepeat] = s.radioNoRepeat
+        p[K.resumeOnConnect] = s.resumeOnConnect
         p[K.eqEnabled] = s.eqEnabled
         p[K.eqPreset] = s.eqPreset
         p[K.eqBands] = s.eqBands.joinToString(",")
@@ -127,6 +140,8 @@ class SettingsRepository(context: Context, scope: CoroutineScope) {
         p[K.downloadQuality] = s.downloadQuality.name
         p[K.wifiOnly] = s.downloadWifiOnly
         p[K.autoDownloadLiked] = s.autoDownloadLiked
+        p[K.downloadsVisible] = s.downloadsVisible
+        p[K.folderMigrationDone] = s.folderMigrationDone
         p[K.islandEnabled] = s.islandEnabled
         p[K.islandMode] = s.islandMode.name
         p[K.islandX] = s.islandOffsetX
@@ -154,6 +169,8 @@ class SettingsRepository(context: Context, scope: CoroutineScope) {
                 normalizeVolume = values["normalize"]?.toBooleanStrictOrNull() ?: current.normalizeVolume,
                 skipSilence = values["skipSilence"]?.toBooleanStrictOrNull() ?: current.skipSilence,
                 infiniteRadio = values["infiniteRadio"]?.toBooleanStrictOrNull() ?: current.infiniteRadio,
+                radioNoRepeat = values["radioNoRepeat"]?.toBooleanStrictOrNull() ?: current.radioNoRepeat,
+                resumeOnConnect = values["resumeOnConnect"]?.toBooleanStrictOrNull() ?: current.resumeOnConnect,
                 eqEnabled = values["eqEnabled"]?.toBooleanStrictOrNull() ?: current.eqEnabled,
                 eqPreset = values["eqPreset"] ?: current.eqPreset,
                 eqBands = values["eqBands"]?.split(',')?.mapNotNull { it.toFloatOrNull() }?.takeIf { it.size == 10 }
@@ -162,6 +179,7 @@ class SettingsRepository(context: Context, scope: CoroutineScope) {
                 downloadQuality = enumOr(values["downloadQuality"], current.downloadQuality),
                 downloadWifiOnly = values["wifiOnly"]?.toBooleanStrictOrNull() ?: current.downloadWifiOnly,
                 autoDownloadLiked = values["autoDownloadLiked"]?.toBooleanStrictOrNull() ?: current.autoDownloadLiked,
+                downloadsVisible = values["downloadsVisible"]?.toBooleanStrictOrNull() ?: current.downloadsVisible,
                 islandOffsetX = values["islandX"]?.toIntOrNull() ?: current.islandOffsetX,
                 islandOffsetY = values["islandY"]?.toIntOrNull() ?: current.islandOffsetY,
                 islandWidth = values["islandWidth"]?.toIntOrNull() ?: current.islandWidth,
@@ -181,6 +199,8 @@ class SettingsRepository(context: Context, scope: CoroutineScope) {
         val normalize = booleanPreferencesKey("normalize")
         val skipSilence = booleanPreferencesKey("skipSilence")
         val infiniteRadio = booleanPreferencesKey("infiniteRadio")
+        val radioNoRepeat = booleanPreferencesKey("radioNoRepeat")
+        val resumeOnConnect = booleanPreferencesKey("resumeOnConnect")
         val eqEnabled = booleanPreferencesKey("eqEnabled")
         val eqPreset = stringPreferencesKey("eqPreset")
         val eqBands = stringPreferencesKey("eqBands")
@@ -188,6 +208,8 @@ class SettingsRepository(context: Context, scope: CoroutineScope) {
         val downloadQuality = stringPreferencesKey("downloadQuality")
         val wifiOnly = booleanPreferencesKey("wifiOnly")
         val autoDownloadLiked = booleanPreferencesKey("autoDownloadLiked")
+        val downloadsVisible = booleanPreferencesKey("downloadsVisible")
+        val folderMigrationDone = booleanPreferencesKey("folderMigrationDone")
         val islandEnabled = booleanPreferencesKey("islandEnabled")
         val islandMode = stringPreferencesKey("islandMode")
         val islandX = intPreferencesKey("islandX")

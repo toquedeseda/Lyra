@@ -47,6 +47,7 @@ class HomeRepository(
     private val music: MusicRepository,
     private val library: LibraryRepository,
     scope: CoroutineScope,
+    private val releases: suspend () -> List<com.lyra.music.data.model.AlbumItem> = { emptyList() },
 ) {
     @Serializable
     private data class Cache(
@@ -158,6 +159,11 @@ class HomeRepository(
                 )
             }
             sections += Section("Hecho para ti", mixes, subtitle = "Mixes infinitos con lo que más escuchas")
+        }
+
+        // Lo nuevo de los artistas que sigues y más escuchas.
+        runCatching { releases() }.getOrNull()?.takeIf { it.isNotEmpty() }?.let { items ->
+            sections += Section("Lanzamientos de tus artistas", items, subtitle = "Lo último de quienes sigues y más escuchas")
         }
 
         // Porque escuchaste…: lo relacionado con tu canción favorita del mes.

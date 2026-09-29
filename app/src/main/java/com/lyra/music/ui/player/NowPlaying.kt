@@ -361,7 +361,7 @@ fun NowPlayingScreen(
                     actions.nav.navigate(EqualizerRoute)
                 }) { Icon(Icons.Outlined.Tune, "Ecualizador", tint = LyraColors.TextSecondary) }
                 Spacer(Modifier.weight(1f))
-                IconButton(onClick = { actions.share(song) }) { Icon(Icons.Outlined.Share, "Compartir", tint = LyraColors.TextSecondary) }
+                IconButton(onClick = { actions.shareCard = song }) { Icon(Icons.Outlined.Share, "Compartir", tint = LyraColors.TextSecondary) }
                 IconButton(onClick = { actions.queueOpen = true }) {
                     Icon(Icons.AutoMirrored.Outlined.QueueMusic, "Cola", tint = LyraColors.TextSecondary)
                 }

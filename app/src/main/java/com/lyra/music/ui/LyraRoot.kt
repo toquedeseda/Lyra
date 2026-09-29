@@ -138,7 +138,28 @@ fun LyraRoot(container: AppContainer) {
                 AppEvent.OpenPlayer -> actions.nowPlayingOpen = true
                 AppEvent.OpenDownloads -> nav.navigate(DownloadsRoute)
                 is AppEvent.OpenLink -> actions.openLink(event.url)
+                AppEvent.OpenUpdate -> container.updates.check(force = true)
+                AppEvent.UpdateNow -> container.updates.checkAndInstall()
+                is AppEvent.OpenAlbum -> nav.navigate(AlbumRoute(event.id))
+                is AppEvent.OpenLocalPlaylist -> nav.navigate(LocalPlaylistRoute(event.id))
             }
+        }
+    }
+
+    // Si la importación de Spotify termina con el diálogo cerrado, se avisa abajo.
+    val importState by container.spotifyImport.state.collectAsState()
+    LaunchedEffect(importState, actions.importDialog) {
+        if (actions.importDialog != null) return@LaunchedEffect
+        when (val s = importState) {
+            is com.lyra.music.data.repo.ImportState.Done -> {
+                container.spotifyImport.dismiss()
+                actions.message("«${s.name}» importada · ${s.found} canciones", "Abrir") { nav.navigate(LocalPlaylistRoute(s.playlistId)) }
+            }
+            is com.lyra.music.data.repo.ImportState.Failed -> {
+                container.spotifyImport.dismiss()
+                actions.message("No se pudo importar: ${s.reason}")
+            }
+            else -> Unit
         }
     }
 
@@ -234,6 +255,12 @@ fun LyraRoot(container: AppContainer) {
 
                 actions.songMenu?.let { request -> SongMenuSheet(request, onDismiss = { actions.songMenu = null }) }
                 actions.addToPlaylist?.let { songs -> AddToPlaylistSheet(songs, onDismiss = { actions.addToPlaylist = null }) }
+                actions.shareCard?.let { song ->
+                    com.lyra.music.ui.share.ShareCardDialog(song, onDismiss = { actions.shareCard = null })
+                }
+                actions.importDialog?.let { url ->
+                    com.lyra.music.ui.components.SpotifyImportDialog(url, onDismiss = { actions.importDialog = null })
+                }
 
                 when (val state = updateState) {
                     is UpdateState.Available, is UpdateState.Downloading, is UpdateState.Installing,

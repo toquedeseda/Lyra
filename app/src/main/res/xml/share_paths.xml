@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Lo que Lyra puede pasar a otras apps al compartir: solo las tarjetas de canciones -->
+<paths>
+    <cache-path
+        name="share"
+        path="share/" />
+</paths>

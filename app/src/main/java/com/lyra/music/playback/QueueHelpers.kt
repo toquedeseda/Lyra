@@ -5,6 +5,8 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.ShuffleOrder.DefaultShuffleOrder
 import com.lyra.music.data.download.DownloadRepository
 import com.lyra.music.data.model.Song
 import com.lyra.music.data.repo.LibraryRepository
@@ -22,12 +24,20 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.io.File
 
-/** Radio infinita: cuando la cola se acaba, añade canciones parecidas a la última. */
+/**
+ * Radio infinita: cuando la cola se acaba, añade canciones parecidas a la última.
+ *
+ * - Las canciones de la radio van siempre DETRÁS de las de tu lista, también en
+ *   aleatorio (antes se mezclaban con las de la playlist o "Me gusta").
+ * - "Radio sin repetir": evita lo escuchado en las últimas 48 h, duplicados de la
+ *   misma canción y dos canciones seguidas del mismo artista.
+ */
 class RadioController(
-    private val player: Player,
+    private val player: ExoPlayer,
     private val music: MusicRepository,
     private val settings: SettingsRepository,
     private val downloads: DownloadRepository,
+    private val library: LibraryRepository,
     private val scope: CoroutineScope,
 ) : Player.Listener {
 
@@ -40,6 +50,7 @@ class RadioController(
 
     /** Reproduce [seed] y rellena la cola con su radio. */
     fun start(seed: Song) {
+        player.shuffleModeEnabled = false
         player.setMediaItems(listOf(seed.toMediaItem(downloads.localCover(seed.id))))
         player.prepare()
         player.play()
@@ -60,6 +71,7 @@ class RadioController(
         scope.launch {
             runCatching { music.radioFromPlaylist(playlistId) }.onSuccess { page ->
                 if (page.songs.isNotEmpty()) {
+                    player.shuffleModeEnabled = false
                     player.setMediaItems(page.songs.map { it.toMediaItem(downloads.localCover(it.id)) })
                     player.prepare()
                     player.play()
@@ -85,7 +97,10 @@ class RadioController(
         if (!settings.current.infiniteRadio || loading) return
         if (player.mediaItemCount == 0 || player.repeatMode != Player.REPEAT_MODE_OFF) return
         if (upcoming() > 2) return
-        val last = player.getMediaItemAt(player.mediaItemCount - 1).toSong() ?: return
+        // La semilla es la última canción que va a sonar (en aleatorio, la última del orden).
+        val order = playOrder()
+        val lastIndex = order.lastOrNull() ?: (player.mediaItemCount - 1)
+        val last = player.getMediaItemAt(lastIndex).toSong() ?: return
         loading = true
         scope.launch {
             val token = continuation
@@ -99,11 +114,48 @@ class RadioController(
         }
     }
 
-    private fun append(songs: List<Song>): Int {
-        val existing = (0 until player.mediaItemCount).map { player.getMediaItemAt(it).mediaId }.toSet()
-        val fresh = songs.filter { it.id !in existing }.distinctBy { it.id }.take(25)
-        if (fresh.isNotEmpty()) player.addMediaItems(fresh.map { it.toMediaItem(downloads.localCover(it.id)) })
+    private suspend fun append(candidates: List<Song>): Int {
+        val existingIds = (0 until player.mediaItemCount).map { player.getMediaItemAt(it).mediaId }.toSet()
+        val existingKeys = (0 until player.mediaItemCount).mapNotNull { player.getMediaItemAt(it).toSong()?.let(::songKey) }.toSet()
+        var fresh = candidates.filter { it.id !in existingIds && songKey(it) !in existingKeys }.distinctBy { songKey(it) }
+
+        if (settings.current.radioNoRepeat) {
+            val recent = runCatching { library.recentlyPlayedIds(48) }.getOrDefault(emptySet())
+            val notRecent = fresh.filter { it.id !in recent }
+            // Si casi todo es reciente, mejor repetir algo que quedarse sin música.
+            if (notRecent.size >= 5 || notRecent.size == fresh.size) fresh = notRecent
+            val lastArtist = playOrder().lastOrNull()?.let { player.getMediaItemAt(it).toSong()?.artists?.firstOrNull()?.name }
+            fresh = spreadArtists(fresh, lastArtist)
+        }
+        fresh = fresh.take(25)
+        if (fresh.isEmpty()) return 0
+
+        // Orden de reproducción antes de añadir (tiene en cuenta el aleatorio).
+        val before = playOrder()
+        val firstNew = player.mediaItemCount
+        player.addMediaItems(fresh.map { it.toMediaItem(downloads.localCover(it.id)) })
+        if (player.shuffleModeEnabled) {
+            // Las nuevas, al final del orden aleatorio y en el orden de la radio.
+            val order = before + (firstNew until player.mediaItemCount)
+            if (order.size == player.mediaItemCount) {
+                player.setShuffleOrder(DefaultShuffleOrder(order.toIntArray(), System.nanoTime()))
+            }
+        }
         return fresh.size
+    }
+
+    /** Orden real en el que van a sonar las canciones (índices), respetando el aleatorio. */
+    private fun playOrder(): List<Int> {
+        val timeline = player.currentTimeline
+        if (timeline.isEmpty) return emptyList()
+        val shuffle = player.shuffleModeEnabled
+        val order = mutableListOf<Int>()
+        var index = timeline.getFirstWindowIndex(shuffle)
+        while (index != C.INDEX_UNSET && order.size <= timeline.windowCount) {
+            order += index
+            index = timeline.getNextWindowIndex(index, Player.REPEAT_MODE_OFF, shuffle)
+        }
+        return order
     }
 
     private fun upcoming(): Int {
@@ -117,6 +169,27 @@ class RadioController(
             count++
         }
         return count
+    }
+
+    companion object {
+        /** La misma canción puede venir como vídeo, audio o versión: se compara título y artista. */
+        fun songKey(song: Song): String =
+            song.title.lowercase().replace(Regex("\\s*[(\\[].*?[)\\]]"), "").replace(Regex("[^\\p{L}\\p{N}]"), "") +
+                "|" + (song.artists.firstOrNull()?.name?.lowercase() ?: "")
+
+        /** Reordena para que no suenen dos canciones seguidas del mismo artista (si se puede). */
+        fun spreadArtists(songs: List<Song>, previousArtist: String?): List<Song> {
+            val pending = songs.toMutableList()
+            val result = mutableListOf<Song>()
+            var last = previousArtist
+            while (pending.isNotEmpty()) {
+                val next = pending.firstOrNull { it.artists.firstOrNull()?.name != last } ?: pending.first()
+                pending.remove(next)
+                result += next
+                last = next.artists.firstOrNull()?.name
+            }
+            return result
+        }
     }
 }
 

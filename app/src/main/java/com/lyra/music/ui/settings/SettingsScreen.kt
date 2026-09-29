@@ -1,6 +1,9 @@
 package com.lyra.music.ui.settings
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.net.Uri
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -40,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.media3.common.util.UnstableApi
 import com.lyra.music.BuildConfig
 import com.lyra.music.data.settings.AppSettings
@@ -53,6 +57,8 @@ import com.lyra.music.ui.library.formatBytes
 import com.lyra.music.ui.navigation.EqualizerRoute
 import com.lyra.music.ui.navigation.IslandRoute
 import com.lyra.music.ui.theme.LyraColors
+import com.lyra.music.widget.LyraWidgetReceiver
+import androidx.glance.appwidget.GlanceAppWidgetManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
@@ -112,11 +118,33 @@ fun SettingsScreen(contentPadding: PaddingValues) {
             item { SwitchRow("Igualar volumen", "Todas las canciones suenan a un volumen parecido.", s.normalizeVolume) { v -> update { it.copy(normalizeVolume = v) } } }
             item { SwitchRow("Saltar silencios", "Recorta los silencios largos al principio y al final.", s.skipSilence) { v -> update { it.copy(skipSilence = v) } } }
             item { SwitchRow("Radio infinita", "Al acabar la cola sigue con canciones parecidas.", s.infiniteRadio) { v -> update { it.copy(infiniteRadio = v) } } }
+            item {
+                SwitchRow(
+                    "Radio sin repetir",
+                    "Evita lo que has escuchado en las últimas 48 horas y no pone dos seguidas del mismo artista.",
+                    s.radioNoRepeat,
+                ) { v -> update { it.copy(radioNoRepeat = v) } }
+            }
+            item { HeadsetRow(s.resumeOnConnect) { v -> update { it.copy(resumeOnConnect = v) } } }
             item { NavRow("Ecualizador", if (s.eqEnabled) "Activado" else "Desactivado") { actions.nav.navigate(EqualizerRoute) } }
             item { SwitchRow("Mostrar letras", "Letras sincronizadas de LRCLIB.", s.showLyrics) { v -> update { it.copy(showLyrics = v) } } }
 
             item { Group("Descargas") }
             item { NavRow("Calidad de descarga", qualityLabel(s.downloadQuality)) { qualityDialog = "download" } }
+            item {
+                SwitchRow(
+                    "Guardar en Música/Lyra",
+                    if (s.downloadsVisible) "Visibles en el gestor de archivos, otras apps y el PC: «Artista - Canción.m4a» con carátula."
+                    else "Ocultas dentro de Lyra (Opus, como en Spotify).",
+                    s.downloadsVisible,
+                ) { v ->
+                    update { it.copy(downloadsVisible = v) }
+                    if (v) actions.launch {
+                        val moved = container.downloads.migrateHiddenToFolder()
+                        if (moved > 0) actions.message("Pasando $moved descargas a Música/Lyra…")
+                    }
+                }
+            }
             item { SwitchRow("Solo con Wi‑Fi", "No gasta datos móviles al descargar.", s.downloadWifiOnly) { v -> update { it.copy(downloadWifiOnly = v) } } }
             item { SwitchRow("Descargar las que te gustan", "Al darle al corazón, se descarga sola.", s.autoDownloadLiked) { v -> update { it.copy(autoDownloadLiked = v) } } }
             item { InfoRow("Espacio usado", "Descargas: ${formatBytes(downloadBytes)} · Caché: ${formatBytes(cacheBytes)}") }
@@ -131,8 +159,17 @@ fun SettingsScreen(contentPadding: PaddingValues) {
             }
             item { NavRow("Borrar todas las descargas", formatBytes(downloadBytes)) { confirmDownloads = true } }
 
-            item { Group("Isla y pantalla de bloqueo") }
+            item { Group("Isla, widget y pantalla de bloqueo") }
             item { NavRow("Isla flotante", if (s.islandEnabled) "Activada" else "Desactivada") { actions.nav.navigate(IslandRoute) } }
+            item {
+                NavRow("Widget", "Lo que suena en la pantalla de inicio, con carátula y controles") {
+                    actions.launch {
+                        val manager = GlanceAppWidgetManager(context)
+                        val pinned = runCatching { manager.requestPinGlanceAppWidget(LyraWidgetReceiver::class.java) }.getOrDefault(false)
+                        if (!pinned) actions.message("Mantén pulsada la pantalla de inicio → Widgets → Lyra")
+                    }
+                }
+            }
             item { InfoRow("Pantalla de bloqueo", "Los controles salen solos en la pantalla de bloqueo y en la notificación mientras suena algo.") }
 
             item { Group("Segundo plano (Vivo)") }
@@ -172,7 +209,20 @@ fun SettingsScreen(contentPadding: PaddingValues) {
             item { Group("Actualizaciones") }
             item { InfoRow("Versión instalada", "Lyra ${BuildConfig.VERSION_NAME}") }
             item { NavRow("Buscar actualizaciones", "En github.com/${BuildConfig.UPDATE_REPO}") { container.updates.check(force = true) } }
-            item { SwitchRow("Comprobar al abrir la app", null, s.checkUpdates) { v -> update { it.copy(checkUpdates = v) } } }
+            item {
+                SwitchRow(
+                    "Buscar actualizaciones solo",
+                    "Al abrir la app y cada 6 horas. Si hay versión nueva, te avisa con una notificación.",
+                    s.checkUpdates,
+                ) { v -> update { it.copy(checkUpdates = v) } }
+            }
+            item {
+                NavRow("Notificaciones", "Actualizaciones, lanzamientos de tus artistas y playlists sincronizadas") {
+                    context.startActivity(
+                        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName),
+                    )
+                }
+            }
 
             item { Group("Acerca de") }
             item {
@@ -238,6 +288,44 @@ private fun qualityDescription(quality: AudioQuality) = when (quality) {
     AudioQuality.HIGH -> "La mejor disponible (~160 kbps Opus)"
     AudioQuality.NORMAL -> "Alrededor de 128 kbps"
     AudioQuality.LOW -> "~50 kbps, gasta muy pocos datos"
+}
+
+/** "Seguir al conectar auriculares" y, si falta, el permiso para que funcione con Lyra cerrada. */
+@Composable
+private fun HeadsetRow(enabled: Boolean, onChange: (Boolean) -> Unit) {
+    val context = LocalContext.current
+    val needsPermission = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+    fun granted() = !needsPermission ||
+        ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+    var hasPermission by remember { mutableStateOf(granted()) }
+    var denied by remember { mutableStateOf(false) }
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+        hasPermission = it
+        denied = !it
+    }
+    Column {
+        SwitchRow(
+            "Seguir al conectar auriculares",
+            "Si la música se paró al quitar los cascos (o al salir del coche), sigue sola al volver a conectarlos.",
+            enabled,
+        ) { v ->
+            onChange(v)
+            if (v && !hasPermission) launcher.launch(Manifest.permission.BLUETOOTH_CONNECT)
+        }
+        if (enabled && !hasPermission) {
+            NavRow(
+                "Permitir «Dispositivos cercanos»",
+                if (denied) "Ábrelo en Permisos de Lyra para que funcione con la app cerrada."
+                else "Para que funcione también con Lyra cerrada (cascos Bluetooth).",
+            ) {
+                if (denied) {
+                    context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}")))
+                } else {
+                    launcher.launch(Manifest.permission.BLUETOOTH_CONNECT)
+                }
+            }
+        }
+    }
 }
 
 @Composable

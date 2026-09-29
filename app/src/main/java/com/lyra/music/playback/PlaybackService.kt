@@ -17,6 +17,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.source.ShuffleOrder.DefaultShuffleOrder
 import androidx.media3.session.CommandButton
 import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.LibraryResult
@@ -58,6 +59,7 @@ object LyraCommands {
     const val ACTION_NEW_QUEUE = "lyra.new_queue"
     const val ARG_SONG = "song"
     const val ARG_PLAYLIST = "playlist"
+    const val ARG_SHUFFLE = "shuffle"
 
     val LIKE = SessionCommand(ACTION_LIKE, Bundle.EMPTY)
     val START_RADIO = SessionCommand(ACTION_START_RADIO, Bundle.EMPTY)
@@ -82,6 +84,22 @@ class PlaybackService : MediaLibraryService() {
     private lateinit var autoLibrary: AutoLibrary
     private val searchResults = mutableMapOf<String, List<Song>>()
     private var retryCount = 0
+    private var pendingShuffleStart = false
+    private lateinit var headphones: HeadphonesWatcher
+    private var widgetJob: kotlinx.coroutines.Job? = null
+
+    /**
+     * En aleatorio, la canción actual pasa a ser la primera del orden y el resto se
+     * baraja detrás. Así suenan TODAS las de la lista (antes, las que quedaban
+     * "antes" de la actual en el orden aleatorio no llegaban a sonar).
+     */
+    private fun shuffleFromCurrent() {
+        val count = player.mediaItemCount
+        if (count < 2) return
+        val current = player.currentMediaItemIndex.coerceIn(0, count - 1)
+        val rest = (0 until count).filter { it != current }.shuffled()
+        player.setShuffleOrder(DefaultShuffleOrder((listOf(current) + rest).toIntArray(), System.nanoTime()))
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -96,7 +114,7 @@ class PlaybackService : MediaLibraryService() {
             scope = scope,
             onNewTrack = { processor.onNewTrack() },
         )
-        radio = RadioController(player, c.music, c.settings, c.downloads, scope)
+        radio = RadioController(player, c.music, c.settings, c.downloads, c.library, scope)
         tracker = PlaybackTracker(player, c.library, scope)
         queueStore = QueueStore(File(filesDir, "queue.json"), scope)
         autoLibrary = AutoLibrary(this)
@@ -125,6 +143,32 @@ class PlaybackService : MediaLibraryService() {
         observeSettings()
         observeLike()
         c.island.attach(player)
+        headphones = HeadphonesWatcher(this, ::resumeOnHeadphones).also { it.start() }
+        updateWidget()
+    }
+
+    /** El widget refleja la canción y si suena (con un pequeño margen para agrupar cambios). */
+    private fun updateWidget() {
+        widgetJob?.cancel()
+        widgetJob = scope.launch {
+            delay(300)
+            val item = player.currentMediaItem
+            runCatching {
+                com.lyra.music.widget.WidgetUpdater.push(this@PlaybackService, item?.toSong(), item?.mediaMetadata?.artworkUri, player.playWhenReady)
+            }
+        }
+    }
+
+    /** Se conectaron unos auriculares: si la música se paró al quitarlos, sigue. */
+    private fun resumeOnHeadphones() {
+        if (!container.settings.current.resumeOnConnect || !HeadsetResume.pending(this)) return
+        if (player.playWhenReady || player.mediaItemCount == 0) return
+        scope.launch {
+            delay(1_500) // Deja que Android pase el audio a los auriculares.
+            if (player.playWhenReady || !HeadsetResume.pending(this@PlaybackService)) return@launch
+            if (player.playbackState == Player.STATE_IDLE) player.prepare()
+            player.play()
+        }
     }
 
     private fun buildPlayer(fx: LyraAudioProcessor, main: Boolean): ExoPlayer {
@@ -223,7 +267,38 @@ class PlaybackService : MediaLibraryService() {
         }
 
         override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
+            if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED && pendingShuffleStart && player.mediaItemCount > 0) {
+                pendingShuffleStart = false
+                if (player.shuffleModeEnabled) shuffleFromCurrent()
+            }
             queueStore.scheduleSave(player)
+        }
+
+        override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
+            // Al activar el aleatorio a mitad de lista, la actual sigue y el resto se baraja.
+            if (shuffleModeEnabled && !pendingShuffleStart) shuffleFromCurrent()
+            queueStore.scheduleSave(player)
+        }
+
+        override fun onEvents(player: Player, events: Player.Events) {
+            if (events.containsAny(
+                    Player.EVENT_MEDIA_ITEM_TRANSITION,
+                    Player.EVENT_PLAY_WHEN_READY_CHANGED,
+                    Player.EVENT_MEDIA_METADATA_CHANGED,
+                    Player.EVENT_TIMELINE_CHANGED,
+                )
+            ) {
+                updateWidget()
+            }
+        }
+
+        override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            val context = this@PlaybackService
+            when {
+                playWhenReady -> HeadsetResume.clear(context)
+                reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_BECOMING_NOISY -> HeadsetResume.markPausedByDisconnect(context)
+                reason == Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST -> HeadsetResume.clear(context)
+            }
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -304,6 +379,7 @@ class PlaybackService : MediaLibraryService() {
                 LyraCommands.ACTION_NEW_QUEUE -> {
                     crossfade.cancel()
                     radio.reset()
+                    pendingShuffleStart = args.getBoolean(LyraCommands.ARG_SHUFFLE, false)
                 }
             }
             return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
@@ -431,6 +507,13 @@ class PlaybackService : MediaLibraryService() {
     }
 
     override fun onDestroy() {
+        headphones.stop()
+        // Al cerrarse el servicio, el widget se queda con la canción en pausa.
+        val last = player.currentMediaItem
+        val app = applicationContext
+        container.scope.launch {
+            runCatching { com.lyra.music.widget.WidgetUpdater.push(app, last?.toSong(), last?.mediaMetadata?.artworkUri, false) }
+        }
         tracker.commit()
         queueStore.saveBlocking(player)
         container.island.detach()

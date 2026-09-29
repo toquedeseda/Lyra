@@ -1,6 +1,7 @@
 package com.lyra.music.data.db
 
 import android.content.Context
+import androidx.room.AutoMigration
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
@@ -18,8 +19,10 @@ import androidx.room.TypeConverters
         DownloadEntity::class,
         LyricsEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = true,
+    // v2: playlists sincronizadas (syncEnabled, autoDownload, lastSyncedAt).
+    autoMigrations = [AutoMigration(from = 1, to = 2)],
 )
 @TypeConverters(Converters::class)
 abstract class LyraDatabase : RoomDatabase() {

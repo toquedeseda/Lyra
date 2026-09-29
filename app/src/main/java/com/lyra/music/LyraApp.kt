@@ -46,6 +46,10 @@ sealed interface AppEvent {
     data object OpenPlayer : AppEvent
     data object OpenDownloads : AppEvent
     data class OpenLink(val url: String) : AppEvent
+    data object OpenUpdate : AppEvent
+    data object UpdateNow : AppEvent
+    data class OpenAlbum(val id: String) : AppEvent
+    data class OpenLocalPlaylist(val id: Long) : AppEvent
 }
 
 /** Todas las dependencias de la app, creadas una sola vez por proceso. */
@@ -61,7 +65,7 @@ class AppContainer(val app: Application) {
     val downloads = DownloadRepository(app, database, settings, scope)
     val library = LibraryRepository(app, database, downloads, settings, scope)
     val lyrics by lazy { LyricsRepository(Lrclib(http), innerTube, database) }
-    val home by lazy { HomeRepository(app, music, library, scope) }
+    val home by lazy { HomeRepository(app, music, library, scope) { releases.releases() } }
     val streamResolver by lazy { StreamResolver(newPipe, settings, http, app.cacheDir) }
     val playerCache by lazy {
         SimpleCache(
@@ -77,6 +81,13 @@ class AppContainer(val app: Application) {
     }
     val updates by lazy { UpdateRepository(app, http, scope) }
     val backup by lazy { BackupManager(app, database, settings, downloads) }
+    val spotifyImport by lazy {
+        com.lyra.music.data.repo.SpotifyImportManager(
+            com.lyra.music.data.repo.SpotifyImporter(http, innerTube), library, scope, app.filesDir,
+        )
+    }
+    val releases by lazy { com.lyra.music.data.repo.ReleasesRepository(app, music, library) }
+    val playlistSync by lazy { com.lyra.music.data.repo.PlaylistSync(database, music, library, downloads, spotifyImport) }
 
     // Canal con búfer: si el evento llega antes de que la interfaz escuche
     // (p. ej. al abrir la app desde la notificación), se guarda hasta entonces.
@@ -102,6 +113,8 @@ class LyraApp : Application(), SingletonImageLoader.Factory {
         super.onCreate()
         container = AppContainer(this)
         createChannels()
+        com.lyra.music.data.Notifier.createChannels(this)
+        com.lyra.music.data.MaintenanceWorker.schedule(this)
 
         // La isla no se muestra mientras Lyra está en pantalla.
         ProcessLifecycleOwner.get().lifecycle.addObserver(
@@ -123,6 +136,14 @@ class LyraApp : Application(), SingletonImageLoader.Factory {
         // Si quedaron descargas a medias, se retoman.
         container.scope.launch {
             if (container.database.downloads().pendingCount() > 0) container.downloads.start()
+        }
+        // Una vez: lo que estaba descargado a escondidas pasa a Música/Lyra.
+        container.scope.launch {
+            val settings = container.settings.loaded()
+            if (settings.downloadsVisible && !settings.folderMigrationDone) {
+                container.downloads.migrateHiddenToFolder()
+                container.settings.update { it.copy(folderMigrationDone = true) }
+            }
         }
     }
 

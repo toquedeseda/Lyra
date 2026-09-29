@@ -1,5 +1,6 @@
 package com.lyra.music.ui
 
+import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import androidx.compose.material3.SnackbarDuration
@@ -10,8 +11,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.core.content.FileProvider
 import androidx.media3.common.util.UnstableApi
 import androidx.navigation.NavController
+import androidx.navigation.NavGraph.Companion.findStartDestination
 import com.lyra.music.AppContainer
 import com.lyra.music.data.model.AlbumItem
 import com.lyra.music.data.model.ArtistItem
@@ -24,6 +27,7 @@ import com.lyra.music.data.model.remoteId
 import com.lyra.music.data.repo.DOWNLOADS_ID
 import com.lyra.music.data.repo.LIKED_SONGS_ID
 import com.lyra.music.data.repo.LinkTarget
+import com.lyra.music.data.source.innertube.hiResArtwork
 import com.lyra.music.data.source.soundcloud.NewPipeSource
 import com.lyra.music.ui.navigation.AlbumRoute
 import com.lyra.music.ui.navigation.ArtistRoute
@@ -31,6 +35,7 @@ import com.lyra.music.ui.navigation.DownloadsRoute
 import com.lyra.music.ui.navigation.LikedRoute
 import com.lyra.music.ui.navigation.LocalPlaylistRoute
 import com.lyra.music.ui.navigation.PlaylistRoute
+import com.lyra.music.ui.navigation.SearchRoute
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -56,6 +61,15 @@ class LyraActions(
     var nowPlayingOpen by mutableStateOf(false)
     var queueOpen by mutableStateOf(false)
     var lyricsOpen by mutableStateOf(false)
+
+    /** Diálogo de importar de Spotify (null = cerrado; "" = abierto sin enlace). */
+    var importDialog by mutableStateOf<String?>(null)
+
+    /** Canción cuya tarjeta para compartir se está mostrando (null = ninguna). */
+    var shareCard by mutableStateOf<Song?>(null)
+
+    /** Búsqueda que la pestaña Buscar debe lanzar al abrirse (desde la biblioteca). */
+    var pendingSearch by mutableStateOf<String?>(null)
 
     private val player get() = container.player
 
@@ -140,6 +154,16 @@ class LyraActions(
         }
     }
 
+    /** Abre la pestaña Buscar con [query] ya buscada en YouTube Music y SoundCloud. */
+    fun searchOnline(query: String) {
+        pendingSearch = query
+        nav.navigate(SearchRoute) {
+            popUpTo(nav.graph.findStartDestination().id) { saveState = true }
+            launchSingleTop = true
+            restoreState = true
+        }
+    }
+
     fun openArtist(id: String?) {
         if (id != null) nav.navigate(ArtistRoute(id)) else message("Este artista no tiene página")
     }
@@ -150,6 +174,10 @@ class LyraActions(
 
     /** Enlace pegado o compartido desde otra app. */
     fun openLink(url: String) {
+        if (container.spotifyImport.isSpotifyLink(url)) {
+            importDialog = url
+            return
+        }
         scope.launch {
             val target = runCatching { container.music.resolveLink(url) }.getOrNull()
             when (target) {
@@ -169,9 +197,10 @@ class LyraActions(
         }
     }
 
-    fun download(songs: List<Song>) {
+    /** [collectionTitle]: nombre de la playlist o álbum (para crear su .m3u8 en Música/Lyra). */
+    fun download(songs: List<Song>, collectionTitle: String? = null) {
         scope.launch {
-            container.downloads.enqueue(songs)
+            container.downloads.enqueue(songs, collectionTitle)
             message(if (songs.size == 1) "Descargando «${songs.first().title}»" else "Descargando ${songs.size} canciones")
         }
     }
@@ -197,13 +226,28 @@ class LyraActions(
         }
     }
 
+    fun linkFor(song: Song): String = when (song.source) {
+        Source.YOUTUBE -> "https://music.youtube.com/watch?v=${song.id.remoteId()}"
+        Source.SOUNDCLOUD -> NewPipeSource.soundCloudUrl(song.id)
+    }
+
     fun share(song: Song) {
-        val url = when (song.source) {
-            Source.YOUTUBE -> "https://music.youtube.com/watch?v=${song.id.remoteId()}"
-            Source.SOUNDCLOUD -> NewPipeSource.soundCloudUrl(song.id)
-        }
         val intent = Intent(Intent.ACTION_SEND).setType("text/plain")
-            .putExtra(Intent.EXTRA_TEXT, "${song.title} · ${song.artistsText}\n$url")
+            .putExtra(Intent.EXTRA_TEXT, "${song.title} · ${song.artistsText}\n${linkFor(song)}")
+        context.startActivity(Intent.createChooser(intent, "Compartir").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+
+    /** Portada para dibujar la tarjeta: la descargada si la hay; si no, la de alta resolución. */
+    fun coverModel(song: Song): Any? = container.downloads.localCover(song.id) ?: hiResArtwork(song.thumbnailUrl, 1080)
+
+    /** Comparte la tarjeta (imagen) con el enlace en el texto. */
+    fun shareImage(song: Song, file: java.io.File) {
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
+        val intent = Intent(Intent.ACTION_SEND).setType("image/jpeg")
+            .putExtra(Intent.EXTRA_STREAM, uri)
+            .putExtra(Intent.EXTRA_TEXT, "${song.title} · ${song.artistsText}\n${linkFor(song)}")
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        intent.clipData = ClipData.newRawUri(song.title, uri)
         context.startActivity(Intent.createChooser(intent, "Compartir").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 

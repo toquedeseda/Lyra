@@ -120,6 +120,30 @@ class UpdateRepository(
         }
     }
 
+    /** Para la comprobación en segundo plano: la versión nueva, o null si no hay. */
+    suspend fun latestIfNewer(): UpdateInfo? {
+        val info = fetch("https://api.github.com/repos/${BuildConfig.UPDATE_REPO}/releases/latest").toInfo() ?: return null
+        prefs.edit().putLong("checked_at", System.currentTimeMillis()).apply()
+        if (!VersionComparator.isNewer(currentVersion, info.version)) return null
+        remember(info)
+        return info
+    }
+
+    /** Solo se avisa una vez por versión. */
+    fun shouldNotify(version: String): Boolean = prefs.getString("notified", null) != version
+
+    fun markNotified(version: String) {
+        prefs.edit().putString("notified", version).apply()
+    }
+
+    /** Botón "Actualizar" de la notificación: busca y, si hay versión nueva, la instala. */
+    fun checkAndInstall() {
+        scope.launch {
+            val info = runCatching { latestIfNewer() }.getOrNull()
+            if (info != null) downloadAndInstall(info) else check(force = true)
+        }
+    }
+
     fun dismiss() {
         if (_state.value !is UpdateState.Downloading && _state.value !is UpdateState.Installing) {
             _state.value = UpdateState.Idle

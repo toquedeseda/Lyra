@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -109,6 +110,9 @@ class LibraryRepository(
 
     suspend fun deletePlaylist(id: Long) = playlists.delete(id)
 
+    /** Mantener al día con la original y/o descargar solas las canciones nuevas. */
+    suspend fun setPlaylistSync(id: Long, sync: Boolean, autoDownload: Boolean) = playlists.setSync(id, sync, autoDownload)
+
     /** Copia una playlist de YouTube Music o SoundCloud a la biblioteca (o la re-sincroniza). */
     suspend fun importPlaylist(item: PlaylistItem, items: List<Song>): Long {
         val existing = playlists.byRemoteId(item.id)
@@ -118,7 +122,10 @@ class LibraryRepository(
             playlists.addSongs(existing.id, items.map { it.id })
             existing.id
         } else {
-            createPlaylist(item.title, items, remoteId = item.id, cover = item.thumbnailUrl)
+            // Las playlists guardadas se mantienen sincronizadas por defecto.
+            createPlaylist(item.title, items, remoteId = item.id, cover = item.thumbnailUrl).also {
+                playlists.setSync(it, sync = true, autoDownload = false)
+            }
         }
     }
 
@@ -156,6 +163,10 @@ class LibraryRepository(
         historyDao.insert(PlayEventEntity(songId = song.id, playedAt = now, playedMs = playedMs))
     }
 
+    /** Canciones escuchadas en las últimas [hours] horas (para que la radio no las repita). */
+    suspend fun recentlyPlayedIds(hours: Int): Set<String> =
+        historyDao.playedSince(System.currentTimeMillis() - hours * 3_600_000L).toSet()
+
     suspend fun clearHistory() {
         historyDao.clear()
         historyDao.clearSongStats()
@@ -177,6 +188,9 @@ class LibraryRepository(
             .mapNotNull { entry -> topSongs(days, 100).flatMap { it.artists }.firstOrNull { (it.id ?: it.name) == entry.key } }
 
     suspend fun searchLocal(query: String): List<Song> = songs.searchLocal(query, 20).map { it.toSong() }
+
+    /** Todo lo que tienes guardado (para buscar dentro de la biblioteca). */
+    val librarySongs: Flow<List<Song>> = songs.inLibrary().map { list -> list.map { it.toSong() } }.distinctUntilChanged()
 
     // ------------------------------------------------------------ búsquedas
 

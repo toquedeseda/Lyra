@@ -8,8 +8,8 @@ plugins {
 }
 
 // La versiÃ³n la cambia el script release.ps1: no tocar el formato de estas dos lÃ­neas.
-val lyraVersionCode = 3
-val lyraVersionName = "1.1.0"
+val lyraVersionCode = 4
+val lyraVersionName = "1.2.0"
 
 // Datos de firma de las releases (fuera del repositorio, ver README).
 val keystoreProps = Properties().apply {
@@ -120,6 +120,7 @@ dependencies {
 
     implementation(libs.datastore.preferences)
     implementation(libs.work.runtime)
+    implementation(libs.glance.appwidget)
     implementation(libs.coroutines.android)
     implementation(libs.coroutines.guava)
     implementation(libs.serialization.json)

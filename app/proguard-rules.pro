@@ -19,6 +19,9 @@
 }
 -keep,includedescriptorclasses class com.lyra.music.**$$serializer { *; }
 
+# --- Widget: Glance crea las acciones de los botones por su nombre ---
+-keep class com.lyra.music.widget.WidgetControl { public <init>(); }
+
 # --- OkHttp / Okio ---
 -dontwarn okhttp3.internal.platform.**
 -dontwarn org.conscrypt.**

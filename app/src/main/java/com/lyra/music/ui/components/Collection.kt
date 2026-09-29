@@ -192,7 +192,7 @@ fun CollectionHeader(
 /** Descargar todo: muestra si ya está todo, parte o nada descargado. */
 @UnstableApi
 @Composable
-fun DownloadAllButton(songs: List<Song>) {
+fun DownloadAllButton(songs: List<Song>, collectionTitle: String? = null) {
     val actions = LocalActions.current
     val downloads = LocalLibraryState.current.downloads
     val states = songs.map { downloads[it.id]?.state }
@@ -212,7 +212,8 @@ fun DownloadAllButton(songs: List<Song>) {
                 when {
                     songs.isEmpty() -> Unit
                     done -> actions.message("Ya está todo descargado")
-                    else -> actions.download(songs.filter { downloads[it.id]?.state != DownloadState.COMPLETED })
+                    // Se pasan todas: las ya descargadas se saltan, y la .m3u8 las incluye a todas.
+                    else -> actions.download(songs, collectionTitle)
                 }
             },
         contentAlignment = Alignment.Center,

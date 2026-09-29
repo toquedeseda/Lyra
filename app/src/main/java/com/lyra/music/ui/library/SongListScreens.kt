@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -22,11 +23,13 @@ import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.MusicOff
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.SearchOff
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -37,6 +40,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -57,7 +61,10 @@ import com.lyra.music.ui.components.EmptyView
 import com.lyra.music.ui.components.Mosaic
 import com.lyra.music.ui.components.OutlineIconButton
 import com.lyra.music.ui.components.PageHeader
+import com.lyra.music.ui.components.SongFilterBar
+import com.lyra.music.ui.components.SongOrder
 import com.lyra.music.ui.components.SongRow
+import com.lyra.music.ui.components.filterSongs
 import com.lyra.music.ui.components.SpecialCover
 import com.lyra.music.ui.components.TextInputDialog
 import com.lyra.music.ui.components.rememberReorderState
@@ -73,6 +80,9 @@ fun LikedScreen(contentPadding: PaddingValues) {
     val rows by actions.container.library.likedSongs.collectAsState(initial = null)
     val songs = rows?.map { it.toSong() }.orEmpty()
     val from = PlaylistItem(LIKED_SONGS_ID, "Canciones que te gustan")
+    var query by rememberSaveable { mutableStateOf("") }
+    var order by rememberSaveable { mutableStateOf(SongOrder.DEFAULT) }
+    val shown = remember(songs, query, order) { songs.filterSongs(query, order) { it } }
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding() + 16.dp)) {
         item {
@@ -86,15 +96,19 @@ fun LikedScreen(contentPadding: PaddingValues) {
                 onPlay = { actions.play(songs, 0, from = from) },
                 onShuffle = { actions.shuffle(songs, from = from) },
             ) {
-                DownloadAllButton(songs)
+                DownloadAllButton(songs, "Canciones que te gustan")
                 OutlineIconButton(Icons.AutoMirrored.Rounded.PlaylistAdd, "Añadir a playlist", onClick = { actions.addToPlaylist = songs })
             }
         }
         if (rows != null && songs.isEmpty()) {
             item { EmptyView(Icons.Rounded.Favorite, "Aún no hay canciones", "Pulsa el corazón en cualquier canción para guardarla aquí.") }
         }
-        itemsIndexed(songs, key = { _, song -> song.id }) { index, song ->
-            SongRow(song, onClick = { actions.play(songs, index, from = from) })
+        if (songs.isNotEmpty()) {
+            item(key = "filter") { SongFilterBar(query, { query = it }, order, { order = it }, "Recientes") }
+            if (shown.isEmpty()) item { NoMatches(query) }
+        }
+        itemsIndexed(shown, key = { _, song -> song.id }) { index, song ->
+            SongRow(song, onClick = { actions.play(shown, index, from = from) })
         }
     }
 }
@@ -111,6 +125,10 @@ fun DownloadsScreen(contentPadding: PaddingValues) {
     val all = rows.orEmpty().map { it.toSong() }
     val from = PlaylistItem(DOWNLOADS_ID, "Descargas")
     var confirmClear by remember { mutableStateOf(false) }
+    var query by rememberSaveable { mutableStateOf("") }
+    var order by rememberSaveable { mutableStateOf(SongOrder.DEFAULT) }
+    val shownRows = remember(rows, query, order) { rows.orEmpty().filterSongs(query, order) { it.toSong() } }
+    val shownCompleted = shownRows.filter { it.downloadState == DownloadState.COMPLETED }.map { it.toSong() }
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding() + 16.dp)) {
         item {
@@ -118,7 +136,11 @@ fun DownloadsScreen(contentPadding: PaddingValues) {
                 title = "Descargas",
                 subtitle = "${completed.size} canciones · ${formatBytes(total)}",
                 eyebrow = "Sin conexión",
-                meta = "Guardadas dentro de Lyra. Suenan aunque no tengas cobertura.",
+                meta = if (actions.container.settings.current.downloadsVisible) {
+                    "En la carpeta ${downloads.folder.displayPath}, con nombre y carátula. Suenan sin cobertura."
+                } else {
+                    "Guardadas dentro de Lyra. Suenan aunque no tengas cobertura."
+                },
                 backdrop = completed.firstOrNull()?.thumbnailUrl,
                 cover = { SpecialCover(Icons.Rounded.ArrowDownward, it, RoundedCornerShape(16.dp), filled = false) },
                 onPlay = { actions.play(completed, 0, from = from) },
@@ -135,13 +157,17 @@ fun DownloadsScreen(contentPadding: PaddingValues) {
         if (rows != null && all.isEmpty()) {
             item { EmptyView(Icons.Rounded.ArrowDownward, "Nada descargado todavía", "Descarga canciones, álbumes o playlists para escucharlos sin conexión.") }
         }
-        itemsIndexed(rows.orEmpty(), key = { _, row -> row.id }) { _, row ->
+        if (all.isNotEmpty()) {
+            item(key = "filter") { SongFilterBar(query, { query = it }, order, { order = it }, "Recientes") }
+            if (shownRows.isEmpty()) item { NoMatches(query) }
+        }
+        itemsIndexed(shownRows, key = { _, row -> row.id }) { _, row ->
             val song = row.toSong()
             SongRow(
                 song,
                 onClick = {
-                    val index = completed.indexOfFirst { it.id == song.id }
-                    if (index >= 0) actions.play(completed, index, from = from) else actions.startRadio(song)
+                    val index = shownCompleted.indexOfFirst { it.id == song.id }
+                    if (index >= 0) actions.play(shownCompleted, index, from = from) else actions.startRadio(song)
                 },
                 trailing = if (row.downloadState == DownloadState.FAILED) {
                     {
@@ -218,6 +244,8 @@ fun LocalPlaylistScreen(id: Long, contentPadding: PaddingValues) {
     var renaming by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
     var syncing by remember { mutableStateOf(false) }
+    var query by rememberSaveable { mutableStateOf("") }
+    var sortOrder by rememberSaveable { mutableStateOf(SongOrder.DEFAULT) }
 
     // Copia local para reordenar sin parpadeos.
     val order = remember { mutableStateListOf<Song>() }
@@ -227,10 +255,13 @@ fun LocalPlaylistScreen(id: Long, contentPadding: PaddingValues) {
             order.addAll(songs)
         }
     }
+    // Buscando u ordenando se muestra una copia; reordenar solo con la lista tal cual.
+    val filtering = query.isNotBlank() || sortOrder != SongOrder.DEFAULT
+    val shown = if (filtering) order.toList().filterSongs(query, sortOrder) { it } else order
     val listState = rememberLazyListState()
     val reorder = rememberReorderState(
         listState = listState,
-        firstIndex = 1,
+        firstIndex = 2,
         onMove = { from, to -> if (from in order.indices && to in order.indices) order.add(to, order.removeAt(from)) },
         onDrop = { _, _ -> actions.launch { library.reorderPlaylist(id, order.map { it.id }) } },
     )
@@ -246,18 +277,28 @@ fun LocalPlaylistScreen(id: Long, contentPadding: PaddingValues) {
             CollectionHeader(
                 title = current?.name.orEmpty(),
                 subtitle = current?.description,
-                eyebrow = if (current?.remoteId != null) "Playlist · Importada" else "Playlist",
+                eyebrow = when {
+                    current?.remoteId?.startsWith("spotify:") == true -> "Playlist · De Spotify"
+                    current?.remoteId != null -> "Playlist · Importada"
+                    else -> "Playlist"
+                } + if (current?.syncEnabled == true) " · Sincronizada" else "",
                 meta = totalDurationText(songs),
                 backdrop = covers.firstOrNull() ?: current?.coverUrl,
                 cover = { Mosaic(if (covers.size >= 4) covers else listOfNotNull(current?.coverUrl ?: covers.firstOrNull()), it, RoundedCornerShape(16.dp)) },
                 onPlay = { actions.play(songs, 0, from = from) },
                 onShuffle = { actions.shuffle(songs, from = from) },
             ) {
-                DownloadAllButton(songs)
+                DownloadAllButton(songs, current?.name)
                 OutlineIconButton(
                     Icons.Rounded.DragHandle,
                     "Reordenar",
-                    onClick = { editing = !editing },
+                    onClick = {
+                        editing = !editing
+                        if (editing) {
+                            query = ""
+                            sortOrder = SongOrder.DEFAULT
+                        }
+                    },
                     tint = if (editing) LyraColors.Accent else LyraColors.TextPrimary,
                 )
                 Row {
@@ -266,19 +307,31 @@ fun LocalPlaylistScreen(id: Long, contentPadding: PaddingValues) {
                         DropdownMenuItem(text = { Text("Cambiar nombre") }, onClick = { menuOpen = false; renaming = true })
                         if (current?.remoteId != null) {
                             DropdownMenuItem(
-                                text = { Text("Sincronizar con el original") },
+                                text = { Text("Buscar canciones nuevas ahora") },
                                 leadingIcon = { Icon(Icons.Rounded.Sync, null) },
                                 onClick = {
                                     menuOpen = false
                                     syncing = true
                                     actions.launch {
-                                        runCatching {
-                                            val page = actions.container.music.fullPlaylist(current.remoteId)
-                                            library.importPlaylist(page.playlist.copy(id = current.remoteId), page.songs)
-                                        }.onSuccess { actions.message("Playlist sincronizada") }
+                                        runCatching { actions.container.playlistSync.sync(current) }
+                                            .onSuccess { actions.message(if (it.added == 0) "Ya está al día" else "${it.added} canciones nuevas") }
                                             .onFailure { actions.message("No se pudo sincronizar") }
                                         syncing = false
                                     }
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(if (current.syncEnabled) "✓ Mantener sincronizada" else "Mantener sincronizada") },
+                                onClick = {
+                                    menuOpen = false
+                                    actions.launch { library.setPlaylistSync(id, !current.syncEnabled, current.autoDownload) }
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(if (current.autoDownload) "✓ Descargar canciones nuevas" else "Descargar canciones nuevas") },
+                                onClick = {
+                                    menuOpen = false
+                                    actions.launch { library.setPlaylistSync(id, true, !current.autoDownload) }
                                 },
                             )
                         }
@@ -290,11 +343,23 @@ fun LocalPlaylistScreen(id: Long, contentPadding: PaddingValues) {
         if (rows != null && songs.isEmpty()) {
             item { EmptyView(Icons.Rounded.MusicOff, "Playlist vacía", "Añade canciones desde su menú (⋮ → Añadir a playlist).") }
         }
-        itemsIndexed(order, key = { _, song -> song.id }) { index, song ->
+        if (songs.isNotEmpty()) {
+            item(key = "filter") {
+                SongFilterBar(
+                    query,
+                    { query = it; if (it.isNotBlank()) editing = false },
+                    sortOrder,
+                    { sortOrder = it; if (it != SongOrder.DEFAULT) editing = false },
+                    "Tu orden",
+                )
+            }
+            if (shown.isEmpty()) item { NoMatches(query) }
+        }
+        itemsIndexed(shown, key = { _, song -> song.id }) { index, song ->
             SongRow(
                 song,
-                onClick = { if (!editing) actions.play(order.toList(), index, from = from) },
-                modifier = Modifier.reorderItem(reorder, index),
+                onClick = { if (!editing) actions.play(shown.toList(), index, from = from) },
+                modifier = if (filtering) Modifier else Modifier.reorderItem(reorder, index),
                 localPlaylistId = id,
                 trailing = if (editing) {
                     {
@@ -341,8 +406,19 @@ fun LocalPlaylistScreen(id: Long, contentPadding: PaddingValues) {
         )
     }
     if (syncing) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { }
+        LinearProgressIndicator(
+            Modifier
+                .fillMaxWidth()
+                .statusBarsPadding(),
+            color = LyraColors.Accent,
+            trackColor = Color.Transparent,
+        )
     }
+}
+
+@Composable
+private fun NoMatches(query: String) {
+    EmptyView(Icons.Rounded.SearchOff, "Sin resultados", "Nada en esta lista coincide con «${query.trim()}».")
 }
 
 fun formatBytes(bytes: Long): String = when {

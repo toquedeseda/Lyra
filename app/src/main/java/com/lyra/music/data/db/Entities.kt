@@ -1,5 +1,6 @@
 package com.lyra.music.data.db
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -74,9 +75,14 @@ data class PlaylistEntity(
     val description: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
-    /** Si se importó de YouTube Music o SoundCloud, su id original (para poder re-sincronizar). */
+    /** Si se importó de YouTube Music, SoundCloud o Spotify, su id original (para re-sincronizar). */
     val remoteId: String? = null,
     val coverUrl: String? = null,
+    /** Se mantiene al día con la original (canciones nuevas). */
+    @ColumnInfo(defaultValue = "0") val syncEnabled: Boolean = false,
+    /** Las canciones nuevas se descargan solas. */
+    @ColumnInfo(defaultValue = "0") val autoDownload: Boolean = false,
+    val lastSyncedAt: Long? = null,
 )
 
 @Entity(
@@ -206,6 +212,7 @@ data class PlaylistSummary(
     val remoteId: String?,
     val coverUrl: String?,
     val songCount: Int,
+    val syncEnabled: Boolean = false,
 )
 
 data class PlayCount(val songId: String, val plays: Int, val totalMs: Long)

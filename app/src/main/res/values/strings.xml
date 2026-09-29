@@ -6,4 +6,8 @@
     <string name="channel_downloads">Descargas</string>
     <string name="island_accessibility_label">Lyra isla</string>
     <string name="island_accessibility_description">Permite que la isla de Lyra se dibuje encima de la barra de estado, junto a la cámara. No lee la pantalla ni lo que haces en otras apps.</string>
+    <string name="widget_label">Lyra</string>
+    <string name="widget_description">Lo que suena, con su carátula y los controles.</string>
+    <string name="widget_preview_title">Lo que suena</string>
+    <string name="widget_preview_subtitle">Con carátula y controles</string>
 </resources>

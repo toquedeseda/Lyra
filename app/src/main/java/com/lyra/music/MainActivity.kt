@@ -57,6 +57,10 @@ class MainActivity : ComponentActivity() {
         when (intent?.action) {
             ACTION_OPEN_PLAYER -> container.send(AppEvent.OpenPlayer)
             ACTION_OPEN_DOWNLOADS -> container.send(AppEvent.OpenDownloads)
+            ACTION_OPEN_UPDATE -> container.send(AppEvent.OpenUpdate)
+            ACTION_UPDATE_NOW -> container.send(AppEvent.UpdateNow)
+            ACTION_OPEN_ALBUM -> intent.getStringExtra(EXTRA_ID)?.let { container.send(AppEvent.OpenAlbum(it)) }
+            ACTION_OPEN_PLAYLIST -> intent.getStringExtra(EXTRA_ID)?.toLongOrNull()?.let { container.send(AppEvent.OpenLocalPlaylist(it)) }
             Intent.ACTION_SEND -> {
                 val text = intent.getStringExtra(Intent.EXTRA_TEXT).orEmpty()
                 Regex("https?://\\S+").find(text)?.value?.let { container.send(AppEvent.OpenLink(it)) }
@@ -66,15 +70,21 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun requestNotificationPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        ) {
-            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
-        }
+        val missing = buildList {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) add(Manifest.permission.POST_NOTIFICATIONS)
+            // La carpeta Música/Lyra en Android 8-9 necesita el permiso de almacenamiento.
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+        }.filter { ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED }
+        if (missing.isNotEmpty()) requestPermissions(missing.toTypedArray(), 1)
     }
 
     companion object {
         const val ACTION_OPEN_PLAYER = "com.lyra.music.OPEN_PLAYER"
         const val ACTION_OPEN_DOWNLOADS = "com.lyra.music.OPEN_DOWNLOADS"
+        const val ACTION_OPEN_UPDATE = "com.lyra.music.OPEN_UPDATE"
+        const val ACTION_UPDATE_NOW = "com.lyra.music.UPDATE_NOW"
+        const val ACTION_OPEN_ALBUM = "com.lyra.music.OPEN_ALBUM"
+        const val ACTION_OPEN_PLAYLIST = "com.lyra.music.OPEN_PLAYLIST"
+        const val EXTRA_ID = "id"
     }
 }

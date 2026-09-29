@@ -16,6 +16,15 @@
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- Isla flotante (modo superposición) -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <!-- Carpeta Música/Lyra en Android 8-9 (desde Android 10 no hace falta) -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+    <!-- Seguir sonando al conectar los cascos Bluetooth con la app cerrada -->
+    <uses-permission
+        android:name="android.permission.BLUETOOTH"
+        android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
 
     <application
         android:name=".LyraApp"
@@ -87,6 +96,39 @@
         <receiver
             android:name=".update.InstallResultReceiver"
             android:exported="false" />
+
+        <!-- Compartir la tarjeta de una canción como imagen -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/share_paths" />
+        </provider>
+
+        <!-- Widget de pantalla de inicio -->
+        <receiver
+            android:name=".widget.LyraWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/lyra_widget" />
+        </receiver>
+
+        <!-- Cascos Bluetooth conectados: sigue lo que se paró al quitarlos -->
+        <receiver
+            android:name=".playback.HeadsetReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.bluetooth.a2dp.profile.action.CONNECTION_STATE_CHANGED" />
+            </intent-filter>
+        </receiver>
 
         <!-- WorkManager necesita declarar el tipo de servicio para las descargas en Android 14+ -->
         <service

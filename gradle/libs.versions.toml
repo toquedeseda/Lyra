@@ -12,6 +12,7 @@ media3 = "1.11.1"
 room = "2.8.5"
 datastore = "1.2.1"
 work = "2.11.2"
+glance = "1.2.0"
 coroutines = "1.11.0"
 serialization = "1.11.0"
 okhttp = "5.5.0"
@@ -44,6 +45,7 @@ room-ktx = { module = "androidx.room:room-ktx", version.ref = "room" }
 room-compiler = { module = "androidx.room:room-compiler", version.ref = "room" }
 datastore-preferences = { module = "androidx.datastore:datastore-preferences", version.ref = "datastore" }
 work-runtime = { module = "androidx.work:work-runtime-ktx", version.ref = "work" }
+glance-appwidget = { module = "androidx.glance:glance-appwidget", version.ref = "glance" }
 coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }
 coroutines-guava = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-guava", version.ref = "coroutines" }
 serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }

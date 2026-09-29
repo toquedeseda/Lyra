@@ -225,9 +225,17 @@ class NewPipeSource(client: OkHttpClient) {
             else -> count.toString()
         }
 
-        /** Elige la pista según la calidad pedida. Prefiere descarga directa frente a HLS. */
-        fun pick(streams: List<AudioStreamInfo>, quality: AudioQuality): AudioStreamInfo? {
-            val candidates = streams.filterNot { it.isHls }.ifEmpty { streams }
+        /** M4A (AAC) o MP3: se abren en cualquier reproductor y admiten carátula dentro. */
+        fun isPortable(stream: AudioStreamInfo) =
+            stream.mimeType == "audio/mp4" || stream.mimeType == "audio/mpeg" || stream.extension == "m4a" || stream.extension == "mp3"
+
+        /**
+         * Elige la pista según la calidad pedida. Prefiere descarga directa frente a
+         * HLS y, con [portable], formatos que se abren en cualquier sitio.
+         */
+        fun pick(streams: List<AudioStreamInfo>, quality: AudioQuality, portable: Boolean = false): AudioStreamInfo? {
+            val usable = if (portable) streams.filter(::isPortable).ifEmpty { streams } else streams
+            val candidates = usable.filterNot { it.isHls }.ifEmpty { usable }
             if (candidates.isEmpty()) return null
             return when (quality) {
                 AudioQuality.HIGH -> candidates.maxByOrNull { it.bitrate }

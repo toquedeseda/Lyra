@@ -59,9 +59,9 @@ class StreamResolver(
     }
 
     /** Para descargar se piden siempre las URLs frescas, con la calidad de descarga. */
-    suspend fun freshStream(songId: String, quality: AudioQuality): AudioStreamInfo {
+    suspend fun freshStream(songId: String, quality: AudioQuality, portable: Boolean = false): AudioStreamInfo {
         val streams = newPipe.audioStreams(songId)
-        return NewPipeSource.pick(streams, quality) ?: throw IOException("Esta canción no tiene audio disponible")
+        return NewPipeSource.pick(streams, quality, portable) ?: throw IOException("Esta canción no tiene audio disponible")
     }
 
     fun invalidate(songId: String) {

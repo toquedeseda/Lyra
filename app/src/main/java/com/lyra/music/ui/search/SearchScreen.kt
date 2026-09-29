@@ -199,6 +199,14 @@ class SearchViewModel(private val container: AppContainer) : ViewModel() {
 fun SearchScreen(contentPadding: PaddingValues) {
     val actions = LocalActions.current
     val vm: SearchViewModel = viewModel { SearchViewModel(actions.container) }
+
+    // Búsqueda que llega desde la biblioteca («Buscarlo en Lyra»).
+    LaunchedEffect(actions.pendingSearch) {
+        val pending = actions.pendingSearch ?: return@LaunchedEffect
+        actions.pendingSearch = null
+        vm.onQueryChange(pending)
+        vm.submit(pending)
+    }
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     var focused by remember { mutableStateOf(false) }

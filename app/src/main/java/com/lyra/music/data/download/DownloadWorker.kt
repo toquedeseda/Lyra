@@ -56,6 +56,7 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
                 }
             }
         }
+        if (completedInRun > 0) runCatching { container.downloads.writePlaylistExports() }
         Result.success()
     }
 
@@ -73,9 +74,12 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
             return
         }
         try {
-            val stream = container.streamResolver.freshStream(songId, container.settings.current.downloadQuality)
+            val settings = container.settings.current
+            val visible = settings.downloadsVisible && container.downloads.folder.available
+            val stream = container.streamResolver.freshStream(songId, settings.downloadQuality, portable = visible)
             val base = DownloadRepository.fileNameFor(songId)
-            val target = File(container.downloads.directory, "$base.${stream.extension}")
+            val tempDir = File(applicationContext.cacheDir, "downloading").apply { mkdirs() }
+            val target = File(tempDir, "$base.${stream.extension}")
             var lastUpdate = 0L
             val onProgress: suspend (Long, Long) -> Unit = { done, total ->
                 val now = System.currentTimeMillis()
@@ -94,15 +98,20 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
             } else {
                 downloadHttp(container.http, stream.url, target, stream.contentLength, onProgress)
             }
-            val cover = downloadCover(song.thumbnailUrl, File(container.downloads.coversDirectory, "$base.jpg"))
+            val coverFile = File(container.downloads.coversDirectory, "$base.jpg")
+            val coverBytes = downloadCover(song.thumbnailUrl, coverFile)
+            val size = target.length()
+            val location = container.downloads.store(song, target, stream, coverBytes, visible)
+            // Si había una copia anterior (p. ej. oculta, antes de la carpeta visible), se borra.
+            entity.filePath?.takeIf { it != location }?.let(container.downloads::deleteLocation)
             dao.upsert(
                 entity.copy(
                     state = DownloadState.COMPLETED,
                     progress = 1f,
-                    downloadedBytes = target.length(),
-                    totalBytes = target.length(),
-                    filePath = target.absolutePath,
-                    coverPath = cover?.absolutePath,
+                    downloadedBytes = size,
+                    totalBytes = size,
+                    filePath = location,
+                    coverPath = coverFile.takeIf { coverBytes != null }?.absolutePath,
                     mimeType = stream.mimeType,
                     bitrate = stream.bitrate,
                     completedAt = System.currentTimeMillis(),
@@ -118,14 +127,24 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
         }
     }
 
-    private fun downloadCover(url: String?, target: File): File? {
-        val hiRes = hiResArtwork(url, 544) ?: return null
+    /**
+     * Baja la carátula y la deja como JPEG cuadrado (las de vídeo son 16:9): se guarda
+     * para verla sin conexión y se mete dentro del archivo de audio.
+     */
+    private fun downloadCover(url: String?, target: File): ByteArray? {
+        val hiRes = hiResArtwork(url, 720) ?: return null
         return runCatching {
-            container.http.newCall(Request.Builder().url(hiRes).build()).execute().use { response ->
+            val bytes = container.http.newCall(Request.Builder().url(hiRes).build()).execute().use { response ->
                 if (!response.isSuccessful) return null
-                target.outputStream().use { response.body.byteStream().copyTo(it) }
+                response.body.bytes()
             }
-            target
+            val bitmap = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return null
+            val side = minOf(bitmap.width, bitmap.height)
+            val square = android.graphics.Bitmap.createBitmap(bitmap, (bitmap.width - side) / 2, (bitmap.height - side) / 2, side, side)
+            val scaled = if (side > 600) android.graphics.Bitmap.createScaledBitmap(square, 600, 600, true) else square
+            val jpeg = java.io.ByteArrayOutputStream().also { scaled.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, it) }.toByteArray()
+            target.writeBytes(jpeg)
+            jpeg
         }.getOrNull()
     }
 

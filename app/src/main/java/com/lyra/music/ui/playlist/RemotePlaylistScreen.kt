@@ -105,7 +105,7 @@ fun RemotePlaylistScreen(id: String, contentPadding: PaddingValues) {
                                 actions.message("Guardada en tu biblioteca", "Abrir") { actions.nav.navigate(LocalPlaylistRoute(localId)) }
                             }
                         })
-                        DownloadAllButton(page.songs)
+                        DownloadAllButton(page.songs, playlist.title)
                     }
                 }
                 itemsIndexed(page.songs, key = { _, song -> song.id }) { index, song ->

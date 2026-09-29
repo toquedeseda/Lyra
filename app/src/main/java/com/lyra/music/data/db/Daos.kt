@@ -88,13 +88,21 @@ interface SongDao {
 
     @Query("SELECT * FROM songs")
     suspend fun all(): List<SongEntity>
+
+    /** Canciones de tu biblioteca: favoritas, descargadas o en alguna de tus listas (las más escuchadas primero). */
+    @Query(
+        """$SONG_WITH_DOWNLOAD WHERE s.likedAt IS NOT NULL OR d.songId IS NOT NULL
+           OR s.id IN (SELECT songId FROM playlist_songs)
+           ORDER BY s.playCount DESC, s.title COLLATE NOCASE""",
+    )
+    fun inLibrary(): Flow<List<SongWithDownload>>
 }
 
 @Dao
 interface PlaylistDao {
     @Query(
         """SELECT p.id, p.name, p.description, p.updatedAt, p.remoteId, p.coverUrl,
-                  COUNT(ps.songId) AS songCount
+                  COUNT(ps.songId) AS songCount, p.syncEnabled
            FROM playlists p LEFT JOIN playlist_songs ps ON ps.playlistId = p.id
            GROUP BY p.id ORDER BY p.updatedAt DESC""",
     )
@@ -120,6 +128,15 @@ interface PlaylistDao {
 
     @Query("UPDATE playlists SET updatedAt = :now WHERE id = :id")
     suspend fun touch(id: Long, now: Long = System.currentTimeMillis())
+
+    @Query("UPDATE playlists SET syncEnabled = :sync, autoDownload = :autoDownload WHERE id = :id")
+    suspend fun setSync(id: Long, sync: Boolean, autoDownload: Boolean)
+
+    @Query("UPDATE playlists SET lastSyncedAt = :time WHERE id = :id")
+    suspend fun markSynced(id: Long, time: Long = System.currentTimeMillis())
+
+    @Query("SELECT * FROM playlists WHERE syncEnabled = 1 AND remoteId IS NOT NULL")
+    suspend fun syncable(): List<PlaylistEntity>
 
     @Query("DELETE FROM playlists WHERE id = :id")
     suspend fun delete(id: Long)
@@ -236,6 +253,9 @@ interface HistoryDao {
            ON e.songId = s.id ORDER BY e.lastPlayed DESC LIMIT :limit""",
     )
     fun history(limit: Int): Flow<List<SongEntity>>
+
+    @Query("SELECT DISTINCT songId FROM play_events WHERE playedAt >= :since")
+    suspend fun playedSince(since: Long): List<String>
 
     @Query("DELETE FROM play_events")
     suspend fun clear()

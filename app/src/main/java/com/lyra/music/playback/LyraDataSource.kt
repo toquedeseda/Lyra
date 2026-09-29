@@ -7,7 +7,6 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.DefaultDataSource
-import androidx.media3.datasource.FileDataSource
 import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.datasource.TransferListener
 import androidx.media3.datasource.cache.Cache
@@ -17,6 +16,7 @@ import com.lyra.music.data.download.DownloadRepository
 import com.lyra.music.data.source.soundcloud.NewPipeDownloader
 import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
+import java.io.IOException
 
 /**
  * Cadena de lectura del reproductor:
@@ -52,7 +52,8 @@ class LyraDataSourceFactory(
         .setUpstreamDataSourceFactory(chunked)
         .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
 
-    private val files = FileDataSource.Factory()
+    /** Archivos locales: rutas normales o `content://` de la carpeta Música/Lyra. */
+    private val local = DefaultDataSource.Factory(context)
 
     override fun createDataSource(): DataSource = RoutingDataSource()
 
@@ -66,9 +67,23 @@ class LyraDataSourceFactory(
 
         override fun open(dataSpec: DataSpec): Long {
             val songId = MediaItems.songIdFrom(dataSpec.uri)
-            val local = songId?.let(downloads::localFile)
+            val localUri = songId?.let(downloads::localUri)
+            if (songId != null && localUri != null) {
+                val source = local.createDataSource()
+                listeners.forEach(source::addTransferListener)
+                try {
+                    current = source
+                    return source.open(dataSpec.withUri(localUri))
+                } catch (e: IOException) {
+                    // Se borró el archivo (p. ej. desde el gestor de archivos): suena desde internet.
+                    runCatching { source.close() }
+                    downloads.markMissing(songId)
+                } catch (e: SecurityException) {
+                    runCatching { source.close() }
+                    downloads.markMissing(songId)
+                }
+            }
             val (source, spec) = when {
-                local != null -> files.createDataSource() to dataSpec.withUri(Uri.fromFile(local))
                 songId != null -> cached.createDataSource() to dataSpec.buildUpon().setKey(dataSpec.key ?: songId).build()
                 else -> network.createDataSource() to dataSpec
             }

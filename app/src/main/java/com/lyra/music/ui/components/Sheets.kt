@@ -30,6 +30,7 @@ import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PlaylistPlay
 import androidx.compose.material.icons.rounded.Radio
 import androidx.compose.material.icons.rounded.RemoveCircleOutline
+import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -129,7 +130,8 @@ fun SongMenuSheet(request: SongMenuRequest, onDismiss: () -> Unit) {
             request.queueIndex?.let { index ->
                 MenuEntry(Icons.Rounded.RemoveCircleOutline, "Quitar de la cola") { act { actions.container.player.remove(index) } }
             }
-            MenuEntry(Icons.Rounded.Share, "Compartir") { act { actions.share(song) } }
+            MenuEntry(Icons.Rounded.Image, "Compartir como imagen") { act { actions.shareCard = song } }
+            MenuEntry(Icons.Rounded.Share, "Compartir enlace") { act { actions.share(song) } }
         }
     }
 }

@@ -95,8 +95,14 @@ class BackupManager(
         val entries = db.playlists().allEntries().groupBy { it.playlistId }
         val completed = if (includeDownloads) db.downloads().completed() else emptyList()
         val downloadEntries = completed.mapNotNull { d ->
-            val file = d.filePath?.let(::File)?.takeIf { it.exists() } ?: return@mapNotNull null
-            BackupDownload(d.songId, "downloads/${file.name}", d.coverPath?.let(::File)?.takeIf { it.exists() }?.let { "covers/${it.name}" })
+            val location = d.filePath ?: return@mapNotNull null
+            val name = downloads.folder.displayName(location) ?: return@mapNotNull null
+            val extension = name.substringAfterLast('.', "audio")
+            BackupDownload(
+                d.songId,
+                "downloads/${DownloadRepository.fileNameFor(d.songId)}.$extension",
+                d.coverPath?.let(::File)?.takeIf { it.exists() }?.let { "covers/${it.name}" },
+            )
         }
         val data = BackupData(
             exportedAt = System.currentTimeMillis(),
@@ -123,7 +129,12 @@ class BackupManager(
             zip.closeEntry()
             downloadEntries.forEach { entry ->
                 val original = completed.first { it.songId == entry.songId }
-                addFile(zip, entry.file, File(original.filePath!!))
+                // Puede estar en Música/Lyra (content://) o en la carpeta oculta.
+                downloads.openLocation(original.filePath!!)?.use { input ->
+                    zip.putNextEntry(ZipEntry(entry.file))
+                    input.copyTo(zip)
+                    zip.closeEntry()
+                }
                 entry.cover?.let { addFile(zip, it, File(original.coverPath!!)) }
             }
         }

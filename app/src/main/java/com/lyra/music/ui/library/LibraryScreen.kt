@@ -3,6 +3,7 @@ package com.lyra.music.ui.library
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -15,11 +16,17 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.SearchOff
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -27,6 +34,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -38,17 +46,25 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.util.UnstableApi
 import com.lyra.music.data.db.DownloadState
+import com.lyra.music.data.db.PlaylistSummary
+import com.lyra.music.data.model.Song
 import com.lyra.music.ui.LocalActions
 import com.lyra.music.ui.components.ChipRow
+import com.lyra.music.ui.components.EmptyView
 import com.lyra.music.ui.components.GhostPillButton
 import com.lyra.music.ui.components.InfoCard
 import com.lyra.music.ui.components.ItemRow
 import com.lyra.music.ui.components.Mosaic
 import com.lyra.music.ui.components.PillButton
+import com.lyra.music.ui.components.SearchPill
 import com.lyra.music.ui.components.SectionHeader
+import com.lyra.music.ui.components.SongRow
 import com.lyra.music.ui.components.SpecialCover
 import com.lyra.music.ui.components.TextInputDialog
+import com.lyra.music.ui.components.matchesQuery
 import com.lyra.music.ui.components.pressable
+import com.lyra.music.ui.components.queryWords
+import com.lyra.music.ui.components.searchText
 import com.lyra.music.ui.navigation.DownloadsRoute
 import com.lyra.music.ui.navigation.LikedRoute
 import com.lyra.music.ui.navigation.LocalPlaylistRoute
@@ -68,8 +84,19 @@ fun LibraryScreen(contentPadding: PaddingValues) {
 
     var filter by rememberSaveable { mutableIntStateOf(0) }
     var creating by remember { mutableStateOf(false) }
+    var query by rememberSaveable { mutableStateOf("") }
+    val searching = query.isNotBlank()
     val filters = listOf("Todo", "Playlists", "Álbumes", "Artistas")
     val showPlaylists = filter == 0 || filter == 1
+
+    // Las canciones de la biblioteca (con su texto ya normalizado) solo se leen mientras buscas.
+    val librarySongs by produceState<List<Pair<Song, String>>?>(null, searching) {
+        if (searching) library.librarySongs.collect { songs -> value = songs.map { it to it.searchText() } }
+    }
+    val songMatches = remember(librarySongs, query) {
+        val words = queryWords(query)
+        librarySongs.orEmpty().filter { (_, text) -> words.all { it in text } }.map { it.first }
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -91,11 +118,88 @@ fun LibraryScreen(contentPadding: PaddingValues) {
                         modifier = Modifier.padding(top = 8.dp),
                     )
                 }
-                GhostPillButton("Nueva", onClick = { creating = true }, icon = Icons.Rounded.Add, modifier = Modifier.padding(top = 10.dp))
+                Box(Modifier.padding(top = 10.dp)) {
+                    var menu by remember { mutableStateOf(false) }
+                    GhostPillButton("Nueva", onClick = { menu = true }, icon = Icons.Rounded.Add)
+                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, containerColor = LyraColors.SurfaceHigh) {
+                        DropdownMenuItem(text = { Text("Nueva playlist") }, onClick = { menu = false; creating = true })
+                        DropdownMenuItem(text = { Text("Importar de Spotify") }, onClick = { menu = false; actions.importDialog = "" })
+                    }
+                }
             }
         }
         item {
-            Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            SearchPill(
+                value = query,
+                onValueChange = { query = it },
+                placeholder = "Buscar en tu biblioteca",
+                modifier = Modifier
+                    .padding(start = 20.dp, end = 20.dp, top = 20.dp)
+                    .fillMaxWidth(),
+            )
+        }
+
+        if (searching) {
+            val text = query.trim()
+            val playlistMatches = playlists.filter { matchesQuery(text, it.name, it.description) }
+            val albumMatches = albums.filter { matchesQuery(text, it.title, it.artistsText, it.year) }
+            val artistMatches = artists.filter { matchesQuery(text, it.title) }
+            val nothing = songMatches.isEmpty() && playlistMatches.isEmpty() && albumMatches.isEmpty() && artistMatches.isEmpty()
+
+            if (nothing && librarySongs != null) {
+                item {
+                    EmptyView(
+                        Icons.Rounded.SearchOff,
+                        "Nada con «$text»",
+                        "No está en tus favoritas, descargas ni listas.",
+                        modifier = Modifier.padding(top = 12.dp),
+                        action = "Buscarlo en Lyra",
+                        onAction = { actions.searchOnline(text) },
+                    )
+                }
+            }
+            if (songMatches.isNotEmpty()) {
+                item { SectionHeader("Canciones", if (songMatches.size == 1) "1 canción" else "${songMatches.size} canciones") }
+                itemsIndexed(songMatches.take(100), key = { _, song -> "s${song.id}" }) { index, song ->
+                    SongRow(song, onClick = { actions.play(songMatches, index, fromLabel = "Tu biblioteca") })
+                }
+            }
+            if (playlistMatches.isNotEmpty()) {
+                item { SectionHeader("Playlists") }
+                items(playlistMatches, key = { "p${it.id}" }) { PlaylistRow(it) }
+            }
+            if (albumMatches.isNotEmpty()) {
+                item { SectionHeader("Álbumes") }
+                items(albumMatches, key = { "a${it.id}" }) { ItemRow(it) }
+            }
+            if (artistMatches.isNotEmpty()) {
+                item { SectionHeader("Artistas") }
+                items(artistMatches, key = { "r${it.id}" }) { ItemRow(it) }
+            }
+            if (!nothing) {
+                item {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .pressable(pressedScale = 0.985f) { actions.searchOnline(text) }
+                            .padding(horizontal = 20.dp, vertical = 18.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Outlined.Search, null, tint = LyraColors.TextSecondary, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(14.dp))
+                        Text(
+                            "Buscar «$text» en YouTube Music y SoundCloud",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = LyraColors.TextSecondary,
+                        )
+                    }
+                }
+            }
+            return@LazyColumn
+        }
+
+        item {
+            Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 PinnedCard(Icons.Rounded.Favorite, true, "Canciones que te gustan", "${liked.size} temas") {
                     actions.nav.navigate(LikedRoute)
                 }
@@ -112,38 +216,16 @@ fun LibraryScreen(contentPadding: PaddingValues) {
                 item {
                     InfoCard(
                         title = "Aún no tienes listas",
-                        text = "Crea una aquí, o guarda cualquier playlist de YouTube Music o SoundCloud con el botón + de su página.",
+                        text = "Crea una aquí, guarda cualquier playlist de YouTube Music o SoundCloud con el botón + de su página, o impórtala de Spotify.",
                         modifier = Modifier.padding(horizontal = 20.dp),
                     ) {
                         PillButton("Nueva playlist", onClick = { creating = true })
+                        Spacer(Modifier.width(8.dp))
+                        GhostPillButton("Importar de Spotify", onClick = { actions.importDialog = "" })
                     }
                 }
             }
-            items(playlists, key = { "p${it.id}" }) { playlist ->
-                val covers by library.playlistCovers(playlist.id).collectAsState(initial = emptyList())
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .pressable(pressedScale = 0.985f) { actions.nav.navigate(LocalPlaylistRoute(playlist.id)) }
-                        .padding(horizontal = 20.dp, vertical = 7.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Mosaic(
-                        if (covers.size >= 4) covers else listOfNotNull(playlist.coverUrl ?: covers.firstOrNull()),
-                        Modifier.size(56.dp),
-                        RoundedCornerShape(10.dp),
-                    )
-                    Spacer(Modifier.width(14.dp))
-                    Column {
-                        Text(playlist.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(
-                            "Playlist · ${playlist.songCount} temas" + if (playlist.remoteId != null) " · Importada" else "",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = LyraColors.TextSecondary,
-                        )
-                    }
-                }
-            }
+            items(playlists, key = { "p${it.id}" }) { PlaylistRow(it) }
         }
         if ((filter == 0 && albums.isNotEmpty()) || filter == 2) {
             item { SectionHeader("Álbumes") }
@@ -188,6 +270,42 @@ fun LibraryScreen(contentPadding: PaddingValues) {
                 }
             },
         )
+    }
+}
+
+@UnstableApi
+@Composable
+private fun PlaylistRow(playlist: PlaylistSummary) {
+    val actions = LocalActions.current
+    val covers by actions.container.library.playlistCovers(playlist.id).collectAsState(initial = emptyList())
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .pressable(pressedScale = 0.985f) { actions.nav.navigate(LocalPlaylistRoute(playlist.id)) }
+            .padding(horizontal = 20.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Mosaic(
+            if (covers.size >= 4) covers else listOfNotNull(playlist.coverUrl ?: covers.firstOrNull()),
+            Modifier.size(56.dp),
+            RoundedCornerShape(10.dp),
+        )
+        Spacer(Modifier.width(14.dp))
+        Column {
+            Text(playlist.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            val origin = when {
+                playlist.remoteId?.startsWith("spotify:") == true -> " · De Spotify"
+                playlist.remoteId != null -> " · Importada"
+                else -> ""
+            }
+            Text(
+                "Playlist · ${playlist.songCount} temas$origin" + if (playlist.syncEnabled) " · Sincronizada" else "",
+                style = MaterialTheme.typography.bodySmall,
+                color = LyraColors.TextSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 
