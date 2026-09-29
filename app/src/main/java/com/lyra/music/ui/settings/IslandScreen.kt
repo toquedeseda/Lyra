@@ -43,7 +43,7 @@ import com.lyra.music.data.settings.IslandMode
 import com.lyra.music.island.EqualizerBars
 import com.lyra.music.island.IslandController
 import com.lyra.music.ui.LocalActions
-import com.lyra.music.ui.components.BackBar
+import com.lyra.music.ui.components.PageHeader
 import com.lyra.music.ui.theme.LyraColors
 
 @UnstableApi
@@ -67,7 +67,7 @@ fun IslandScreen(contentPadding: PaddingValues) {
     fun update(transform: (AppSettings) -> AppSettings) = actions.launch { container.settings.update(transform) }
 
     Column(Modifier.fillMaxSize()) {
-        BackBar("Isla flotante")
+        PageHeader("Isla flotante", "Lo que suena, junto a la cámara, fuera de Lyra.")
         Column(
             Modifier
                 .verticalScroll(rememberScrollState())
@@ -78,7 +78,7 @@ fun IslandScreen(contentPadding: PaddingValues) {
                 "Aparece junto a la cámara cuando sales de Lyra con música sonando. Tócala para desplegarla con los controles; mantenla pulsada para abrir Lyra.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = LyraColors.TextSecondary,
-                modifier = Modifier.padding(horizontal = 16.dp),
+                modifier = Modifier.padding(horizontal = 20.dp),
             )
             SwitchRow("Activar la isla", null, s.islandEnabled) { value -> update { it.copy(islandEnabled = value) } }
 
@@ -116,7 +116,7 @@ fun IslandScreen(contentPadding: PaddingValues) {
                 "Consejo: pon música, sal de Lyra y mira dónde queda. Vuelve y ajústala hasta que rodee la cámara.",
                 style = MaterialTheme.typography.bodySmall,
                 color = LyraColors.TextTertiary,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
             )
         }
     }
@@ -143,7 +143,7 @@ private fun Preview(s: AppSettings) {
             .fillMaxWidth()
             .height(120.dp)
             .clip(RoundedCornerShape(16.dp))
-            .background(Color(0xFF1E1E1E)),
+            .background(LyraColors.SurfaceHigh),
     ) {
         Row(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
             Text("12:30", style = MaterialTheme.typography.labelMedium)
@@ -165,9 +165,9 @@ private fun Preview(s: AppSettings) {
                     .padding(start = 4.dp)
                     .size(((s.islandHeight - 12) / 1.4f).coerceAtLeast(10f).dp)
                     .clip(CircleShape)
-                    .background(Color(0xFF555555)),
+                    .background(LyraColors.TextTertiary),
             )
-            EqualizerBars(true, Modifier.align(Alignment.CenterEnd).padding(end = 6.dp).size(10.dp))
+            EqualizerBars(true, Modifier.align(Alignment.CenterEnd).padding(end = 6.dp).size(10.dp), color = LyraColors.Accent)
         }
         // La cámara
         Box(

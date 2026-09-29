@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.rounded.ArrowDownward
@@ -54,6 +55,8 @@ import com.lyra.music.ui.components.ConfirmDialog
 import com.lyra.music.ui.components.DownloadAllButton
 import com.lyra.music.ui.components.EmptyView
 import com.lyra.music.ui.components.Mosaic
+import com.lyra.music.ui.components.OutlineIconButton
+import com.lyra.music.ui.components.PageHeader
 import com.lyra.music.ui.components.SongRow
 import com.lyra.music.ui.components.SpecialCover
 import com.lyra.music.ui.components.TextInputDialog
@@ -76,15 +79,15 @@ fun LikedScreen(contentPadding: PaddingValues) {
             CollectionHeader(
                 title = "Canciones que te gustan",
                 subtitle = null,
+                eyebrow = "Tu colección",
                 meta = totalDurationText(songs),
-                cover = { SpecialCover(Icons.Rounded.Favorite, it) },
+                backdrop = songs.firstOrNull()?.thumbnailUrl,
+                cover = { SpecialCover(Icons.Rounded.Favorite, it, RoundedCornerShape(16.dp), filled = true) },
                 onPlay = { actions.play(songs, 0, from = from) },
                 onShuffle = { actions.shuffle(songs, from = from) },
             ) {
                 DownloadAllButton(songs)
-                IconButton(onClick = { actions.addToPlaylist = songs }) {
-                    Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, "Añadir a playlist", tint = LyraColors.TextSecondary)
-                }
+                OutlineIconButton(Icons.AutoMirrored.Rounded.PlaylistAdd, "Añadir a playlist", onClick = { actions.addToPlaylist = songs })
             }
         }
         if (rows != null && songs.isEmpty()) {
@@ -113,21 +116,19 @@ fun DownloadsScreen(contentPadding: PaddingValues) {
         item {
             CollectionHeader(
                 title = "Descargas",
-                subtitle = "${completed.size} canciones • ${formatBytes(total)}",
-                meta = "Guardadas dentro de Lyra. Suenan sin conexión.",
-                cover = { SpecialCover(Icons.Rounded.ArrowDownward, it) },
+                subtitle = "${completed.size} canciones · ${formatBytes(total)}",
+                eyebrow = "Sin conexión",
+                meta = "Guardadas dentro de Lyra. Suenan aunque no tengas cobertura.",
+                backdrop = completed.firstOrNull()?.thumbnailUrl,
+                cover = { SpecialCover(Icons.Rounded.ArrowDownward, it, RoundedCornerShape(16.dp), filled = false) },
                 onPlay = { actions.play(completed, 0, from = from) },
                 onShuffle = { actions.shuffle(completed, from = from) },
             ) {
                 if (failed > 0) {
-                    IconButton(onClick = { actions.launch { downloads.retryFailed() } }) {
-                        Icon(Icons.Rounded.Refresh, "Reintentar fallidas", tint = LyraColors.TextSecondary)
-                    }
+                    OutlineIconButton(Icons.Rounded.Refresh, "Reintentar fallidas", onClick = { actions.launch { downloads.retryFailed() } })
                 }
                 if (all.isNotEmpty()) {
-                    IconButton(onClick = { confirmClear = true }) {
-                        Icon(Icons.Rounded.DeleteSweep, "Borrar todas", tint = LyraColors.TextSecondary)
-                    }
+                    OutlineIconButton(Icons.Rounded.DeleteSweep, "Borrar todas", onClick = { confirmClear = true })
                 }
             }
         }
@@ -144,7 +145,7 @@ fun DownloadsScreen(contentPadding: PaddingValues) {
                 },
                 trailing = if (row.downloadState == DownloadState.FAILED) {
                     {
-                        TextButton(onClick = { actions.download(listOf(song)) }) { Text("Reintentar", color = Color.White) }
+                        TextButton(onClick = { actions.download(listOf(song)) }) { Text("Reintentar", color = LyraColors.Accent, style = MaterialTheme.typography.labelLarge) }
                     }
                 } else null,
             )
@@ -177,9 +178,9 @@ fun HistoryScreen(contentPadding: PaddingValues) {
     val songs by actions.container.library.history.collectAsState(initial = null)
     var confirm by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
-        com.lyra.music.ui.components.BackBar("Historial") {
+        PageHeader("Historial", "Lo último que has escuchado.") {
             if (!songs.isNullOrEmpty()) {
-                IconButton(onClick = { confirm = true }) { Icon(Icons.Rounded.DeleteOutline, "Borrar historial") }
+                IconButton(onClick = { confirm = true }) { Icon(Icons.Rounded.DeleteOutline, "Borrar historial", tint = LyraColors.TextSecondary) }
             }
         }
         LazyColumn(contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding() + 16.dp)) {
@@ -245,18 +246,23 @@ fun LocalPlaylistScreen(id: Long, contentPadding: PaddingValues) {
             CollectionHeader(
                 title = current?.name.orEmpty(),
                 subtitle = current?.description,
+                eyebrow = if (current?.remoteId != null) "Playlist · Importada" else "Playlist",
                 meta = totalDurationText(songs),
-                cover = { Mosaic(if (covers.size >= 4) covers else listOfNotNull(current?.coverUrl ?: covers.firstOrNull()), it) },
+                backdrop = covers.firstOrNull() ?: current?.coverUrl,
+                cover = { Mosaic(if (covers.size >= 4) covers else listOfNotNull(current?.coverUrl ?: covers.firstOrNull()), it, RoundedCornerShape(16.dp)) },
                 onPlay = { actions.play(songs, 0, from = from) },
                 onShuffle = { actions.shuffle(songs, from = from) },
             ) {
                 DownloadAllButton(songs)
-                IconButton(onClick = { editing = !editing }) {
-                    Icon(Icons.Rounded.DragHandle, "Reordenar", tint = if (editing) Color.White else LyraColors.TextSecondary)
-                }
+                OutlineIconButton(
+                    Icons.Rounded.DragHandle,
+                    "Reordenar",
+                    onClick = { editing = !editing },
+                    tint = if (editing) LyraColors.Accent else LyraColors.TextPrimary,
+                )
                 Row {
-                    IconButton(onClick = { menuOpen = true }) { Icon(Icons.Rounded.Edit, "Editar", tint = LyraColors.TextSecondary) }
-                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }, containerColor = LyraColors.SurfaceHigher) {
+                    OutlineIconButton(Icons.Rounded.Edit, "Editar", onClick = { menuOpen = true })
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }, containerColor = LyraColors.SurfaceHigh) {
                         DropdownMenuItem(text = { Text("Cambiar nombre") }, onClick = { menuOpen = false; renaming = true })
                         if (current?.remoteId != null) {
                             DropdownMenuItem(

@@ -4,6 +4,7 @@ import androidx.media3.common.C
 import androidx.media3.common.audio.AudioProcessor
 import com.lyra.music.data.source.lyrics.Lrclib
 import com.lyra.music.playback.AudioFxConfig
+import com.lyra.music.playback.AudioLevels
 import com.lyra.music.playback.LyraAudioProcessor
 import com.lyra.music.update.VersionComparator
 import org.junit.Assert.assertEquals
@@ -97,6 +98,41 @@ class AudioProcessorTest {
         val start = rmsDb(out, 0, rate / 2)
         val end = rmsDb(out, out.size - rate, out.size)
         assertTrue("debería subir al menos 5 dB (de $start a $end)", end > start + 5)
+    }
+
+    @Test
+    fun `publica niveles variados para las barras de la isla`() {
+        val processor = LyraAudioProcessor().apply {
+            config = AudioFxConfig(normalize = false)
+            publishLevels = true
+        }
+        processor.configure(AudioProcessor.AudioFormat(rate, 2, C.ENCODING_PCM_16BIT))
+        processor.flush()
+        // Graves que suben y bajan (como un bombo) durante 3 segundos.
+        val frames = rate * 3
+        val seen = mutableListOf<Float>()
+        val out = FloatArray(3)
+        var frame = 0
+        while (frame < frames) {
+            val n = minOf(2048, frames - frame)
+            val input = ByteBuffer.allocateDirect(n * 4).order(ByteOrder.LITTLE_ENDIAN)
+            for (i in 0 until n) {
+                val t = (frame + i).toDouble() / rate
+                val envelope = if ((t * 2).toInt() % 2 == 0) 0.8 else 0.05
+                val v = (envelope * sin(2 * PI * 80 * t) * 32767).toInt().toShort()
+                input.putShort(v)
+                input.putShort(v)
+            }
+            input.flip()
+            processor.queueInput(input)
+            processor.output
+            frame += n
+            if (AudioLevels.sample(System.nanoTime(), out)) seen += out[0]
+        }
+        assertTrue("sin niveles publicados", seen.isNotEmpty())
+        assertTrue("las barras deberían bajar (mín ${seen.min()})", seen.min() < 0.3f)
+        assertTrue("las barras deberían subir (máx ${seen.max()})", seen.max() > 0.7f)
+        assertTrue(seen.all { it in 0f..1f })
     }
 
     @Test

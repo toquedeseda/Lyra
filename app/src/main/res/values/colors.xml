@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="lyra_black">#FF000000</color>
-    <color name="lyra_white">#FFFFFFFF</color>
+    <color name="lyra_black">#FF0A0A0B</color>
+    <color name="lyra_bone">#FFE8E6DF</color>
+    <color name="lyra_white">#FFF3F3F1</color>
 </resources>

@@ -6,10 +6,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.AddCircleOutline
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -23,6 +22,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.util.UnstableApi
 import com.lyra.music.AppContainer
 import com.lyra.music.data.model.PlaylistPage
+import com.lyra.music.data.model.Source
 import com.lyra.music.ui.LocalActions
 import com.lyra.music.ui.components.Artwork
 import com.lyra.music.ui.components.BackBar
@@ -32,10 +32,10 @@ import com.lyra.music.ui.components.ErrorView
 import com.lyra.music.ui.components.LoadViewModel
 import com.lyra.music.ui.components.Loadable
 import com.lyra.music.ui.components.LoadingView
+import com.lyra.music.ui.components.OutlineIconButton
 import com.lyra.music.ui.components.SongRow
 import com.lyra.music.ui.components.totalDurationText
 import com.lyra.music.ui.navigation.LocalPlaylistRoute
-import com.lyra.music.ui.theme.LyraColors
 import kotlinx.coroutines.launch
 
 @UnstableApi
@@ -84,27 +84,27 @@ fun RemotePlaylistScreen(id: String, contentPadding: PaddingValues) {
             LazyColumn(
                 state = listState,
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding() + 16.dp),
+                contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding() + 24.dp),
             ) {
                 item {
                     CollectionHeader(
                         title = playlist.title,
                         subtitle = playlist.author,
+                        eyebrow = if (Source.of(playlist.id) == Source.SOUNDCLOUD) "Playlist · SoundCloud" else "Playlist",
                         meta = page.subtitle ?: totalDurationText(page.songs),
                         description = page.description,
-                        cover = { Artwork(playlist.thumbnailUrl, it) },
+                        backdrop = playlist.thumbnailUrl,
+                        cover = { Artwork(playlist.thumbnailUrl, it, RoundedCornerShape(16.dp)) },
                         onPlay = { actions.play(page.songs, 0, from = playlist) },
                         onShuffle = { actions.shuffle(page.songs, from = playlist) },
                     ) {
-                        IconButton(onClick = {
+                        OutlineIconButton(Icons.Rounded.Add, "Guardar en la biblioteca", onClick = {
                             actions.launch {
                                 val songs = runCatching { vm.allSongs() }.getOrDefault(page.songs)
                                 val localId = actions.container.library.importPlaylist(playlist, songs)
                                 actions.message("Guardada en tu biblioteca", "Abrir") { actions.nav.navigate(LocalPlaylistRoute(localId)) }
                             }
-                        }) {
-                            Icon(Icons.Rounded.AddCircleOutline, "Guardar en la biblioteca", tint = LyraColors.TextSecondary)
-                        }
+                        })
                         DownloadAllButton(page.songs)
                     }
                 }

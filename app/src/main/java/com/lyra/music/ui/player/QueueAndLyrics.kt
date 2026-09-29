@@ -95,17 +95,17 @@ fun QueueSheet(onDismiss: () -> Unit) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = LyraColors.SurfaceHigh,
+        containerColor = LyraColors.Surface,
     ) {
         LazyColumn(state = listState, modifier = Modifier.navigationBarsPadding(), contentPadding = PaddingValues(bottom = 24.dp)) {
             item {
-                Text("Reproduciendo ahora", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                Text("Reproduciendo ahora", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
                 state.song?.let { SongRow(it, onClick = {}) }
             }
             item {
-                Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.padding(start = 20.dp, end = 8.dp, top = 18.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("A continuación", style = MaterialTheme.typography.titleMedium)
+                        Text("A continuación", style = MaterialTheme.typography.headlineSmall)
                         Text(
                             if (state.shuffle) "Aleatorio activado · desactívalo para reordenar" else "Mantén el asa para reordenar · desliza para quitar",
                             style = MaterialTheme.typography.bodySmall,
@@ -114,12 +114,18 @@ fun QueueSheet(onDismiss: () -> Unit) {
                     }
                     if (upcoming.isNotEmpty()) TextButton(onClick = player::clearUpcoming) { Text("Vaciar", color = LyraColors.TextSecondary) }
                 }
-                Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.padding(horizontal = 20.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("Radio infinita al acabar", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                     Switch(
                         checked = settings.infiniteRadio,
                         onCheckedChange = { value -> actions.launch { actions.container.settings.update { it.copy(infiniteRadio = value) } } },
-                        colors = SwitchDefaults.colors(checkedThumbColor = Color.Black, checkedTrackColor = Color.White),
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = LyraColors.OnAccent,
+                            checkedTrackColor = LyraColors.Accent,
+                            uncheckedThumbColor = LyraColors.TextSecondary,
+                            uncheckedTrackColor = LyraColors.SurfaceHigher,
+                            uncheckedBorderColor = LyraColors.SurfaceHigher,
+                        ),
                     )
                 }
             }
@@ -134,14 +140,14 @@ fun QueueSheet(onDismiss: () -> Unit) {
                         Box(
                             Modifier
                                 .fillMaxSize()
-                                .background(Color(0xFF3A3A3A))
+                                .background(LyraColors.SurfaceHigher)
                                 .padding(horizontal = 24.dp),
                             contentAlignment = Alignment.CenterEnd,
-                        ) { Text("Quitar", color = Color.White) }
+                        ) { Text("Quitar", color = LyraColors.TextPrimary, style = MaterialTheme.typography.labelLarge) }
                     },
                     modifier = Modifier.reorderItem(reorder, position),
                 ) {
-                    Box(Modifier.background(LyraColors.SurfaceHigh)) {
+                    Box(Modifier.background(LyraColors.Surface)) {
                         SongRow(
                             entry.song,
                             onClick = { player.skipTo(entry.index) },
@@ -177,7 +183,7 @@ fun LyricsFullScreen(song: Song, lyrics: Lyrics, onClose: () -> Unit) {
     Column(
         Modifier
             .fillMaxSize()
-            .background(Brush.verticalGradient(listOf(Color(0xFF3C3C3C), Color(0xFF121212))))
+            .background(Brush.verticalGradient(listOf(LyraColors.SurfaceHigher, LyraColors.Background)))
             .statusBarsPadding()
             .navigationBarsPadding(),
     ) {
@@ -213,18 +219,16 @@ fun LyricsFullScreen(song: Song, lyrics: Lyrics, onClose: () -> Unit) {
                 itemsIndexed(synced) { index, line ->
                     val color by animateColorAsState(
                         when {
-                            index == current -> Color.White
-                            index < current -> Color(0xFF9A9A9A)
-                            else -> Color(0xFF5E5E5E)
+                            index == current -> LyraColors.TextPrimary
+                            index < current -> LyraColors.TextSecondary
+                            else -> LyraColors.TextTertiary
                         },
                         label = "línea",
                     )
                     Text(
                         line.text.ifBlank { "♪" },
                         color = color,
-                        fontSize = 26.sp,
-                        lineHeight = 32.sp,
-                        fontWeight = FontWeight.ExtraBold,
+                        style = MaterialTheme.typography.headlineLarge,
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))

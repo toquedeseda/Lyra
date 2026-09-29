@@ -1,10 +1,16 @@
 package com.lyra.music.ui
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -12,20 +18,25 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsTopHeight
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.LibraryBooks
 import androidx.compose.material.icons.automirrored.rounded.LibraryBooks
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material.icons.automirrored.outlined.LibraryBooks
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -43,6 +54,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.media3.common.util.UnstableApi
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavDestination.Companion.hierarchy
@@ -82,6 +94,7 @@ import com.lyra.music.ui.navigation.SettingsRoute
 import com.lyra.music.ui.player.MiniPlayer
 import com.lyra.music.ui.player.NowPlayingScreen
 import com.lyra.music.ui.playlist.RemotePlaylistScreen
+import com.lyra.music.ui.search.SearchScreen
 import com.lyra.music.ui.settings.EqualizerScreen
 import com.lyra.music.ui.settings.IslandScreen
 import com.lyra.music.ui.settings.SettingsScreen
@@ -95,9 +108,13 @@ private data class Tab(val route: Any, val label: String, val icon: ImageVector,
 private val tabs = listOf(
     Tab(HomeRoute, "Inicio", Icons.Outlined.Home, Icons.Rounded.Home),
     Tab(SearchRoute, "Buscar", Icons.Outlined.Search, Icons.Rounded.Search),
-    Tab(LibraryRoute, "Tu biblioteca", Icons.AutoMirrored.Outlined.LibraryBooks, Icons.AutoMirrored.Rounded.LibraryBooks),
+    Tab(LibraryRoute, "Biblioteca", Icons.AutoMirrored.Outlined.LibraryBooks, Icons.AutoMirrored.Rounded.LibraryBooks),
 )
 
+/** Curva suave de salida, parecida a la de iOS. */
+private val SmoothOut = CubicBezierEasing(0.2f, 0.9f, 0.25f, 1f)
+
+@OptIn(ExperimentalSharedTransitionApi::class)
 @UnstableApi
 @Composable
 fun LyraRoot(container: AppContainer) {
@@ -142,111 +159,137 @@ fun LyraRoot(container: AppContainer) {
     CompositionLocalProvider(
         LocalActions provides actions,
         LocalLibraryState provides libraryState,
-        // Todo lo que no está dentro del Scaffold (reproductor, menús…) hereda texto blanco.
-        androidx.compose.material3.LocalContentColor provides Color.White,
+        // Todo lo que no está dentro del Scaffold (reproductor, menús…) hereda el blanco hueso.
+        LocalContentColor provides LyraColors.TextPrimary,
     ) {
-        Box(
+        SharedTransitionLayout(
             Modifier
                 .fillMaxSize()
                 .background(LyraColors.Background),
         ) {
-            Scaffold(
-                containerColor = LyraColors.Background,
-                snackbarHost = { SnackbarHost(snackbar) },
-                bottomBar = { BottomBar(actions) },
-            ) { padding ->
-                NavHost(
-                    navController = nav,
-                    startDestination = HomeRoute,
-                    enterTransition = { fadeIn(tween(180)) },
-                    exitTransition = { fadeOut(tween(120)) },
-                ) {
-                    composable<HomeRoute> { HomeScreen(padding) }
-                    composable<SearchRoute> { SearchScreenEntry(padding) }
-                    composable<LibraryRoute> { LibraryScreen(padding) }
-                    composable<AlbumRoute> { AlbumScreen(it.toRoute<AlbumRoute>().id, padding) }
-                    composable<ArtistRoute> { ArtistScreen(it.toRoute<ArtistRoute>().id, padding) }
-                    composable<PlaylistRoute> { RemotePlaylistScreen(it.toRoute<PlaylistRoute>().id, padding) }
-                    composable<LocalPlaylistRoute> { LocalPlaylistScreen(it.toRoute<LocalPlaylistRoute>().id, padding) }
-                    composable<BrowseRoute> {
-                        val route = it.toRoute<BrowseRoute>()
-                        BrowseScreen(route.browseId, route.params, route.title, padding)
-                    }
-                    composable<LikedRoute> { LikedScreen(padding) }
-                    composable<DownloadsRoute> { DownloadsScreen(padding) }
-                    composable<HistoryRoute> { HistoryScreen(padding) }
-                    composable<SettingsRoute> { SettingsScreen(padding) }
-                    composable<EqualizerRoute> { EqualizerScreen(padding) }
-                    composable<IslandRoute> { IslandScreen(padding) }
-                }
-            }
-
-            // Franja oscura tras la barra de estado para que el contenido no se mezcle con la hora.
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .windowInsetsTopHeight(WindowInsets.statusBars)
-                    .background(Color(0xB3000000)),
-            )
-
-            AnimatedVisibility(
-                visible = actions.nowPlayingOpen,
-                enter = slideInVertically(tween(320)) { it },
-                exit = slideOutVertically(tween(260)) { it },
-            ) {
-                NowPlayingScreen(onClose = { actions.nowPlayingOpen = false })
-            }
-
-            actions.songMenu?.let { request -> SongMenuSheet(request, onDismiss = { actions.songMenu = null }) }
-            actions.addToPlaylist?.let { songs -> AddToPlaylistSheet(songs, onDismiss = { actions.addToPlaylist = null }) }
-
-            when (val state = updateState) {
-                is UpdateState.Available, is UpdateState.Downloading, is UpdateState.Installing,
-                is UpdateState.NeedsPermission, is UpdateState.Failed -> {
-                    if (state is UpdateState.Failed && state.info == null) {
-                        // Fallo al comprobar: solo se avisa si lo pidió el usuario.
-                        LaunchedEffect(state) {
-                            if (state.manual) actions.message("No se pudo comprobar: ${state.reason}")
-                            container.updates.dismiss()
+            val shared = this
+            Box(Modifier.fillMaxSize()) {
+                Scaffold(
+                    containerColor = LyraColors.Background,
+                    snackbarHost = {
+                        SnackbarHost(snackbar) { data ->
+                            Snackbar(
+                                data,
+                                shape = RoundedCornerShape(14.dp),
+                                containerColor = LyraColors.SurfaceHigher,
+                                contentColor = LyraColors.TextPrimary,
+                                actionColor = LyraColors.Accent,
+                            )
                         }
-                    } else {
-                        UpdateDialog(
-                            state = state,
-                            currentVersion = container.updates.currentVersion,
-                            onUpdate = container.updates::downloadAndInstall,
-                            onOpenPermission = { context.startActivity(container.updates.permissionIntent()) },
-                            onDismiss = container.updates::dismiss,
-                        )
+                    },
+                    bottomBar = { BottomBar(actions, shared) },
+                ) { padding ->
+                    NavHost(
+                        navController = nav,
+                        startDestination = HomeRoute,
+                        enterTransition = { fadeIn(tween(240)) + slideInHorizontally(tween(320, easing = SmoothOut)) { it / 14 } },
+                        exitTransition = { fadeOut(tween(160)) },
+                        popEnterTransition = { fadeIn(tween(240)) },
+                        popExitTransition = { fadeOut(tween(180)) + slideOutHorizontally(tween(240)) { it / 14 } },
+                    ) {
+                        composable<HomeRoute> { HomeScreen(padding) }
+                        composable<SearchRoute> { SearchScreen(padding) }
+                        composable<LibraryRoute> { LibraryScreen(padding) }
+                        composable<AlbumRoute> { AlbumScreen(it.toRoute<AlbumRoute>().id, padding) }
+                        composable<ArtistRoute> { ArtistScreen(it.toRoute<ArtistRoute>().id, padding) }
+                        composable<PlaylistRoute> { RemotePlaylistScreen(it.toRoute<PlaylistRoute>().id, padding) }
+                        composable<LocalPlaylistRoute> { LocalPlaylistScreen(it.toRoute<LocalPlaylistRoute>().id, padding) }
+                        composable<BrowseRoute> {
+                            val route = it.toRoute<BrowseRoute>()
+                            BrowseScreen(route.browseId, route.params, route.title, padding)
+                        }
+                        composable<LikedRoute> { LikedScreen(padding) }
+                        composable<DownloadsRoute> { DownloadsScreen(padding) }
+                        composable<HistoryRoute> { HistoryScreen(padding) }
+                        composable<SettingsRoute> { SettingsScreen(padding) }
+                        composable<EqualizerRoute> { EqualizerScreen(padding) }
+                        composable<IslandRoute> { IslandScreen(padding) }
                     }
                 }
-                is UpdateState.UpToDate -> LaunchedEffect(state) {
-                    if (state.manual) actions.message("Tienes la última versión")
-                    container.updates.dismiss()
+
+                // Franja oscura tras la barra de estado para que el contenido no se mezcle con la hora.
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .windowInsetsTopHeight(WindowInsets.statusBars)
+                        .background(LyraColors.Background.copy(alpha = 0.75f)),
+                )
+
+                AnimatedVisibility(
+                    visible = actions.nowPlayingOpen,
+                    enter = slideInVertically(tween(420, easing = SmoothOut)) { it / 3 } + fadeIn(tween(260)),
+                    exit = slideOutVertically(tween(320)) { it / 3 } + fadeOut(tween(220)),
+                ) {
+                    NowPlayingScreen(
+                        onClose = { actions.nowPlayingOpen = false },
+                        sharedScope = shared,
+                        visibilityScope = this,
+                    )
                 }
-                else -> Unit
+
+                actions.songMenu?.let { request -> SongMenuSheet(request, onDismiss = { actions.songMenu = null }) }
+                actions.addToPlaylist?.let { songs -> AddToPlaylistSheet(songs, onDismiss = { actions.addToPlaylist = null }) }
+
+                when (val state = updateState) {
+                    is UpdateState.Available, is UpdateState.Downloading, is UpdateState.Installing,
+                    is UpdateState.NeedsPermission, is UpdateState.Failed -> {
+                        if (state is UpdateState.Failed && state.info == null) {
+                            // Fallo al comprobar: solo se avisa si lo pidió el usuario.
+                            LaunchedEffect(state) {
+                                if (state.manual) actions.message("No se pudo comprobar: ${state.reason}")
+                                container.updates.dismiss()
+                            }
+                        } else {
+                            UpdateDialog(
+                                state = state,
+                                currentVersion = container.updates.currentVersion,
+                                onUpdate = container.updates::downloadAndInstall,
+                                onOpenPermission = { context.startActivity(container.updates.permissionIntent()) },
+                                onDismiss = container.updates::dismiss,
+                            )
+                        }
+                    }
+                    is UpdateState.UpToDate -> LaunchedEffect(state) {
+                        if (state.manual) actions.message("Tienes la última versión")
+                        container.updates.dismiss()
+                    }
+                    else -> Unit
+                }
+                whatsNew?.let { (version, notes) -> WhatsNewDialog(version, notes, onDismiss = { whatsNew = null }) }
             }
-            whatsNew?.let { (version, notes) -> WhatsNewDialog(version, notes, onDismiss = { whatsNew = null }) }
         }
     }
 }
 
+@OptIn(ExperimentalSharedTransitionApi::class)
 @UnstableApi
 @Composable
-private fun SearchScreenEntry(padding: androidx.compose.foundation.layout.PaddingValues) =
-    com.lyra.music.ui.search.SearchScreen(padding)
-
-@UnstableApi
-@Composable
-private fun BottomBar(actions: LyraActions) {
+private fun BottomBar(actions: LyraActions, shared: SharedTransitionScope) {
     val backStack by actions.nav.currentBackStackEntryAsState()
     val destination = backStack?.destination
     Column(
         Modifier.background(
-            Brush.verticalGradient(listOf(Color.Transparent, Color(0xE6000000), Color.Black)),
+            Brush.verticalGradient(
+                0f to Color.Transparent,
+                0.4f to LyraColors.Background.copy(alpha = 0.92f),
+                1f to LyraColors.Background,
+            ),
         ),
     ) {
-        MiniPlayer()
-        NavigationBar(containerColor = Color.Transparent, tonalElevation = androidx.compose.ui.unit.Dp(0f)) {
+        MiniPlayer(sharedScope = shared)
+        // Línea finísima sobre la barra, como en la web.
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(LyraColors.Border),
+        )
+        NavigationBar(containerColor = LyraColors.Background, tonalElevation = 0.dp) {
             tabs.forEach { tab ->
                 val selected = destination?.hierarchy?.any { it.hasRoute(tab.route::class) } == true
                 NavigationBarItem(
@@ -259,10 +302,10 @@ private fun BottomBar(actions: LyraActions) {
                         }
                     },
                     icon = { Icon(if (selected) tab.selectedIcon else tab.icon, tab.label) },
-                    label = { Text(tab.label) },
+                    label = { Text(tab.label, style = MaterialTheme.typography.labelMedium) },
                     colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = Color.White,
-                        selectedTextColor = Color.White,
+                        selectedIconColor = LyraColors.TextPrimary,
+                        selectedTextColor = LyraColors.TextPrimary,
                         unselectedIconColor = LyraColors.TextTertiary,
                         unselectedTextColor = LyraColors.TextTertiary,
                         indicatorColor = Color.Transparent,

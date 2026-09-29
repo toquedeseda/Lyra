@@ -9,6 +9,8 @@ import android.view.WindowManager
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import com.lyra.music.MainActivity
+import com.lyra.music.data.db.DownloadEntity
+import com.lyra.music.data.db.DownloadState
 import com.lyra.music.data.model.Song
 import com.lyra.music.data.settings.AppSettings
 import com.lyra.music.data.settings.IslandMode
@@ -33,22 +35,43 @@ data class IslandState(
     val pausedAt: Long = 0,
 )
 
+/** Aviso temporal (como las "actividades" del iPhone). */
+data class IslandNotice(
+    val kind: Kind,
+    val label: String,
+    val title: String,
+    val artwork: String? = null,
+    val id: Long = System.nanoTime(),
+) {
+    enum class Kind { NOW_PLAYING, DOWNLOAD, LIKED }
+}
+
+/** Forma de la isla: píldora, aviso o tarjeta desplegada. */
+sealed interface IslandShape {
+    data object Pill : IslandShape
+    data class Notice(val notice: IslandNotice) : IslandShape
+    data object Expanded : IslandShape
+}
+
 /**
- * La isla: una píldora negra junto a la cámara que muestra lo que suena y se
- * despliega al tocarla. Se dibuja con el servicio de accesibilidad (encima de la
- * barra de estado) o, si no está activado, con el permiso de "mostrar sobre otras apps".
- * No aparece mientras Lyra está abierta.
+ * La isla: una píldora negra junto a la cámara que muestra lo que suena, se
+ * estira para avisar de cosas y se despliega al tocarla. Se dibuja con el
+ * servicio de accesibilidad (encima de la barra de estado) o, si no está
+ * activado, con el permiso de "mostrar sobre otras apps". No aparece con Lyra abierta.
  */
 class IslandController(
     private val context: Context,
     private val settings: SettingsRepository,
     private val scope: CoroutineScope,
+    private val downloadStates: StateFlow<Map<String, DownloadEntity>>,
+    private val likedIds: StateFlow<Set<String>>,
+    private val songLookup: suspend (String) -> Song?,
 ) {
     private val _state = MutableStateFlow(IslandState())
     val state: StateFlow<IslandState> = _state.asStateFlow()
 
-    private val _expanded = MutableStateFlow(false)
-    val expanded: StateFlow<Boolean> = _expanded.asStateFlow()
+    private val _shape = MutableStateFlow<IslandShape>(IslandShape.Pill)
+    val shape: StateFlow<IslandShape> = _shape.asStateFlow()
 
     private val accessibilityHost = MutableStateFlow<AccessibilityService?>(null)
     private val appVisible = MutableStateFlow(true)
@@ -57,35 +80,42 @@ class IslandController(
     private var player: Player? = null
     private var window: IslandWindow? = null
     private var windowType = 0
-    private var observer: Job? = null
+    private var jobs = mutableListOf<Job>()
     private var progressJob: Job? = null
-    private var collapseJob: Job? = null
+    private var shapeJob: Job? = null
 
     val accessibilityConnected: StateFlow<AccessibilityService?> = accessibilityHost.asStateFlow()
+
+    private val visible: Boolean get() = window != null
 
     fun attach(player: Player) {
         this.player = player
         player.addListener(listener)
         readPlayer(player)
-        observer?.cancel()
-        observer = scope.launch {
-            combine(settings.flow, _state, accessibilityHost, appVisible, tick) { s, st, host, visible, _ ->
-                Decision(s, st, host, visible)
-            }.collect(::apply)
-        }
-        // Vuelve a evaluar cada minuto (para ocultarla tras un rato en pausa).
-        scope.launch {
-            while (isActive && this@IslandController.player != null) {
-                delay(30_000)
-                tick.value = System.currentTimeMillis()
-            }
-        }
+        jobs.forEach { it.cancel() }
+        jobs = mutableListOf(
+            scope.launch {
+                combine(settings.flow, _state, accessibilityHost, appVisible, tick) { s, st, host, isVisible, _ ->
+                    Decision(s, st, host, isVisible)
+                }.collect(::apply)
+            },
+            // Vuelve a evaluar de vez en cuando (para ocultarla tras un rato en pausa).
+            scope.launch {
+                while (isActive) {
+                    delay(30_000)
+                    tick.value = System.currentTimeMillis()
+                }
+            },
+            scope.launch { watchDownloads() },
+            scope.launch { watchLikes() },
+        )
     }
 
     fun detach() {
         player?.removeListener(listener)
         player = null
-        observer?.cancel()
+        jobs.forEach { it.cancel() }
+        jobs.clear()
         hide()
     }
 
@@ -98,23 +128,41 @@ class IslandController(
         accessibilityHost.value = null
     }
 
-    fun setAppVisible(visible: Boolean) {
-        appVisible.value = visible
+    fun setAppVisible(isVisible: Boolean) {
+        appVisible.value = isVisible
     }
 
     fun canDrawOverlays(): Boolean = Settings.canDrawOverlays(context)
 
+    // ------------------------------------------------------------- formas
+
+    fun expand() = setShape(IslandShape.Expanded, 6_000)
+
+    fun collapse() = setShape(IslandShape.Pill, 0)
+
+    /** Muestra un aviso unos segundos (si no está desplegada del todo). */
+    fun showNotice(notice: IslandNotice) {
+        if (!visible || _shape.value == IslandShape.Expanded) return
+        setShape(IslandShape.Notice(notice), 3_400)
+    }
+
+    private fun setShape(shape: IslandShape, autoCollapseMs: Long) {
+        _shape.value = shape
+        shapeJob?.cancel()
+        if (autoCollapseMs > 0) {
+            shapeJob = scope.launch {
+                delay(autoCollapseMs)
+                _shape.value = IslandShape.Pill
+            }
+        }
+    }
+
+    /** Cualquier toque en la isla desplegada reinicia la cuenta atrás para recogerse. */
+    fun keepExpanded() {
+        if (_shape.value == IslandShape.Expanded) setShape(IslandShape.Expanded, 6_000)
+    }
+
     // ------------------------------------------------------------- acciones
-
-    fun expand() {
-        _expanded.value = true
-        scheduleCollapse()
-    }
-
-    fun collapse() {
-        _expanded.value = false
-        collapseJob?.cancel()
-    }
 
     fun togglePlay() {
         val p = player ?: return
@@ -122,18 +170,18 @@ class IslandController(
             if (p.playbackState == Player.STATE_IDLE) p.prepare()
             p.play()
         }
-        scheduleCollapse()
+        keepExpanded()
     }
 
     fun next() {
         player?.seekToNext()
-        scheduleCollapse()
+        keepExpanded()
     }
 
     fun previous() {
         val p = player ?: return
         if (p.currentPosition > 3_000) p.seekTo(0) else p.seekToPrevious()
-        scheduleCollapse()
+        keepExpanded()
     }
 
     fun openApp() {
@@ -145,11 +193,45 @@ class IslandController(
         )
     }
 
-    private fun scheduleCollapse() {
-        collapseJob?.cancel()
-        collapseJob = scope.launch {
-            delay(5_000)
-            _expanded.value = false
+    // ------------------------------------------------------------- avisos
+
+    private suspend fun watchDownloads() {
+        var known: Set<String>? = null
+        var pending = mutableListOf<String>()
+        var flushJob: Job? = null
+        downloadStates.collect { map ->
+            val completed = map.values.filter { it.state == DownloadState.COMPLETED }.map { it.songId }.toSet()
+            val previous = known
+            known = completed
+            if (previous == null) return@collect
+            val fresh = completed - previous
+            if (fresh.isEmpty()) return@collect
+            pending += fresh
+            // Si terminan varias seguidas (un álbum), se agrupan en un solo aviso.
+            flushJob?.cancel()
+            flushJob = scope.launch {
+                delay(1_500)
+                val ids = pending.toList()
+                pending = mutableListOf()
+                if (ids.size == 1) {
+                    val song = songLookup(ids.first())
+                    showNotice(IslandNotice(IslandNotice.Kind.DOWNLOAD, "Descarga completada", song?.title ?: "Canción descargada", song?.thumbnailUrl))
+                } else {
+                    showNotice(IslandNotice(IslandNotice.Kind.DOWNLOAD, "Descargas completadas", "${ids.size} canciones listas sin conexión"))
+                }
+            }
+        }
+    }
+
+    private suspend fun watchLikes() {
+        var known: Set<String>? = null
+        likedIds.collect { ids ->
+            val previous = known
+            known = ids
+            val current = _state.value.song ?: return@collect
+            if (previous != null && current.id in ids && current.id !in previous) {
+                showNotice(IslandNotice(IslandNotice.Kind.LIKED, "Añadida a Me gusta", current.title, current.thumbnailUrl))
+            }
         }
     }
 
@@ -187,6 +269,7 @@ class IslandController(
             current.update(geometry)
         } else {
             hide()
+            _shape.value = IslandShape.Pill
             window = IslandWindow(hostContext, type, geometry, this).also { it.show() }
             windowType = type
         }
@@ -195,10 +278,11 @@ class IslandController(
 
     private fun hide() {
         progressJob?.cancel()
+        shapeJob?.cancel()
         window?.remove()
         window = null
         windowType = 0
-        _expanded.value = false
+        _shape.value = IslandShape.Pill
     }
 
     private fun startProgress() {
@@ -225,7 +309,12 @@ class IslandController(
 
     private val listener = object : Player.Listener {
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            val before = _state.value.song?.id
             player?.let(::readPlayer)
+            val song = _state.value.song
+            if (song != null && song.id != before && before != null) {
+                showNotice(IslandNotice(IslandNotice.Kind.NOW_PLAYING, "Ahora suena", "${song.title} · ${song.artistsText}", song.thumbnailUrl))
+            }
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {

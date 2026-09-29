@@ -37,7 +37,7 @@ import androidx.media3.common.util.UnstableApi
 import com.lyra.music.playback.EqPresets
 import com.lyra.music.playback.LyraAudioProcessor
 import com.lyra.music.ui.LocalActions
-import com.lyra.music.ui.components.BackBar
+import com.lyra.music.ui.components.PageHeader
 import com.lyra.music.ui.components.ChipRow
 import com.lyra.music.ui.theme.LyraColors
 import kotlin.math.roundToInt
@@ -62,7 +62,7 @@ fun EqualizerScreen(contentPadding: PaddingValues) {
     }
 
     Column(Modifier.fillMaxSize()) {
-        BackBar("Ecualizador")
+        PageHeader("Ecualizador", "Diez bandas propias de Lyra. Se aplica a todo, también a las descargas.")
         Column(
             Modifier
                 .verticalScroll(rememberScrollState())
@@ -74,7 +74,7 @@ fun EqualizerScreen(contentPadding: PaddingValues) {
             Text(
                 "Presets",
                 style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 8.dp),
+                modifier = Modifier.padding(start = 20.dp, top = 18.dp, bottom = 10.dp),
             )
             ChipRow(
                 labels = EqPresets.all.map { it.label } + if (selectedPreset < 0) listOf("Personalizado") else emptyList(),
@@ -127,7 +127,7 @@ fun EqualizerScreen(contentPadding: PaddingValues) {
                     actions.launch { settings.update { it.copy(eqBands = List(10) { 0f }, eqPreset = "flat", eqPreamp = 0f) } }
                 },
                 modifier = Modifier.padding(horizontal = 8.dp),
-            ) { Text("Restablecer", color = Color.White) }
+            ) { Text("Restablecer", color = LyraColors.Accent, style = MaterialTheme.typography.labelLarge) }
         }
     }
 }
@@ -137,7 +137,7 @@ private fun VerticalBand(value: Float, enabled: Boolean, onChange: (Float) -> Un
     val current by rememberUpdatedState(value)
     val change by rememberUpdatedState(onChange)
     val done by rememberUpdatedState(onDone)
-    val activeColor = if (enabled) Color.White else LyraColors.TextTertiary
+    val activeColor = if (enabled) LyraColors.Accent else LyraColors.TextTertiary
     Canvas(
         Modifier
             .width(28.dp)
@@ -167,8 +167,8 @@ private fun VerticalBand(value: Float, enabled: Boolean, onChange: (Float) -> Un
         val bottom = size.height - 8.dp.toPx()
         val zeroY = (top + bottom) / 2
         val y = zeroY - (value / 12f) * (bottom - top) / 2
-        drawLine(Color(0xFF3A3A3A), Offset(centerX, top), Offset(centerX, bottom), strokeWidth = 4.dp.toPx(), cap = StrokeCap.Round)
-        drawLine(Color(0xFF555555), Offset(centerX - 6.dp.toPx(), zeroY), Offset(centerX + 6.dp.toPx(), zeroY), strokeWidth = 1.dp.toPx())
+        drawLine(LyraColors.SurfaceHigher, Offset(centerX, top), Offset(centerX, bottom), strokeWidth = 4.dp.toPx(), cap = StrokeCap.Round)
+        drawLine(LyraColors.TextTertiary, Offset(centerX - 6.dp.toPx(), zeroY), Offset(centerX + 6.dp.toPx(), zeroY), strokeWidth = 1.dp.toPx())
         drawLine(activeColor, Offset(centerX, zeroY), Offset(centerX, y), strokeWidth = 4.dp.toPx(), cap = StrokeCap.Round)
         drawCircle(activeColor, radius = 9.dp.toPx(), center = Offset(centerX, y))
     }

@@ -86,7 +86,7 @@ class PlaybackService : MediaLibraryService() {
     override fun onCreate() {
         super.onCreate()
         val c = container
-        processor = LyraAudioProcessor().apply { config = c.settings.current.toFxConfig() }
+        processor = LyraAudioProcessor().apply { config = c.settings.current.toFxConfig(); publishLevels = true }
         player = buildPlayer(processor, main = true)
         crossfade = CrossfadeController(
             main = player,

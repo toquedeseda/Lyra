@@ -1,7 +1,7 @@
 package com.lyra.music.ui.artist
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -17,11 +17,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Radio
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material.icons.outlined.Radio
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -34,7 +31,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -43,17 +39,21 @@ import androidx.media3.common.util.UnstableApi
 import coil3.compose.AsyncImage
 import com.lyra.music.AppContainer
 import com.lyra.music.data.model.ArtistPage
+import com.lyra.music.data.model.Source
 import com.lyra.music.ui.LocalActions
 import com.lyra.music.ui.components.BackBar
 import com.lyra.music.ui.components.ErrorView
+import com.lyra.music.ui.components.Eyebrow
 import com.lyra.music.ui.components.LoadViewModel
 import com.lyra.music.ui.components.Loadable
 import com.lyra.music.ui.components.LoadingView
+import com.lyra.music.ui.components.OutlineIconButton
 import com.lyra.music.ui.components.PlayCircleButton
 import com.lyra.music.ui.components.SectionHeader
 import com.lyra.music.ui.components.SectionView
 import com.lyra.music.ui.components.ShuffleIconButton
 import com.lyra.music.ui.components.SongRow
+import com.lyra.music.ui.components.pressable
 import com.lyra.music.ui.navigation.BrowseRoute
 import com.lyra.music.ui.navigation.PlaylistRoute
 import com.lyra.music.ui.theme.LyraColors
@@ -79,17 +79,16 @@ fun ArtistScreen(id: String, contentPadding: PaddingValues) {
             val artist = page.artist
             val following by actions.container.library.isFollowing(artist.id).collectAsState(initial = false)
             var showAllTop by remember { mutableStateOf(false) }
-            val context = page.artist
 
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding() + 16.dp),
+                contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding() + 24.dp),
             ) {
                 item {
                     Box(
                         Modifier
                             .fillMaxWidth()
-                            .aspectRatio(1.25f),
+                            .aspectRatio(1.1f),
                     ) {
                         AsyncImage(
                             model = page.bannerUrl ?: artist.thumbnailUrl,
@@ -100,53 +99,79 @@ fun ArtistScreen(id: String, contentPadding: PaddingValues) {
                         Box(
                             Modifier
                                 .fillMaxSize()
-                                .background(Brush.verticalGradient(listOf(Color(0x66000000), Color.Transparent, LyraColors.Background))),
+                                .background(
+                                    Brush.verticalGradient(
+                                        0f to LyraColors.Background.copy(alpha = 0.45f),
+                                        0.35f to LyraColors.Background.copy(alpha = 0f),
+                                        0.75f to LyraColors.Background.copy(alpha = 0.7f),
+                                        1f to LyraColors.Background,
+                                    ),
+                                ),
                         )
                         BackBar()
                         Column(
                             Modifier
                                 .align(Alignment.BottomStart)
-                                .padding(16.dp),
+                                .padding(horizontal = 20.dp, vertical = 8.dp),
                         ) {
-                            Text(artist.title, style = MaterialTheme.typography.displaySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                            page.listeners?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = LyraColors.TextSecondary) }
+                            Eyebrow(if (Source.of(artist.id) == Source.SOUNDCLOUD) "Artista · SoundCloud" else "Artista")
+                            Text(
+                                artist.title,
+                                style = MaterialTheme.typography.displayLarge,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(top = 6.dp),
+                            )
+                            page.listeners?.let {
+                                Text(it, style = MaterialTheme.typography.bodyMedium, color = LyraColors.TextSecondary, modifier = Modifier.padding(top = 4.dp))
+                            }
                         }
                     }
                 }
                 item {
-                    Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        OutlinedButton(
-                            onClick = { actions.launch { actions.container.library.setFollowing(artist, !following) } },
-                            border = BorderStroke(1.dp, if (following) Color.White else LyraColors.TextTertiary),
-                            shape = RoundedCornerShape(50),
-                        ) { Text(if (following) "Siguiendo" else "Seguir", color = Color.White) }
+                    Row(Modifier.padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            Modifier
+                                .height(38.dp)
+                                .clip(RoundedCornerShape(50))
+                                .then(
+                                    if (following) Modifier.background(LyraColors.SurfaceHigher)
+                                    else Modifier.border(1.dp, LyraColors.TextTertiary, RoundedCornerShape(50)),
+                                )
+                                .pressable { actions.launch { actions.container.library.setFollowing(artist, !following) } }
+                                .padding(horizontal = 18.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(if (following) "Siguiendo" else "Seguir", style = MaterialTheme.typography.labelLarge)
+                        }
+                        Spacer(Modifier.width(10.dp))
                         if (page.radioPlaylistId != null) {
-                            IconButton(onClick = { actions.container.player.startPlaylistRadio(page.radioPlaylistId, "Radio de ${artist.title}") }) {
-                                Icon(Icons.Rounded.Radio, "Radio del artista", tint = LyraColors.TextSecondary)
-                            }
+                            OutlineIconButton(Icons.Outlined.Radio, "Radio del artista", onClick = {
+                                actions.container.player.startPlaylistRadio(page.radioPlaylistId, "Radio de ${artist.title}")
+                            })
                         }
                         Spacer(Modifier.weight(1f))
                         ShuffleIconButton { actions.shuffle(page.topSongs, from = artist) }
                         Spacer(Modifier.width(8.dp))
-                        PlayCircleButton({ actions.play(page.topSongs, 0, from = context) })
+                        PlayCircleButton({ actions.play(page.topSongs, 0, from = artist) })
                     }
                 }
                 if (page.topSongs.isNotEmpty()) {
                     item { SectionHeader("Populares") }
                     val visible = if (showAllTop) page.topSongs else page.topSongs.take(5)
                     itemsIndexed(visible, key = { _, song -> "top-${song.id}" }) { index, song ->
-                        SongRow(song, onClick = { actions.play(page.topSongs, index, from = context) }, index = index + 1)
+                        SongRow(song, onClick = { actions.play(page.topSongs, index, from = artist) }, index = index + 1)
                     }
                     item {
                         when {
                             page.topSongsMore != null -> TextButton(
                                 onClick = { actions.nav.navigate(PlaylistRoute("yt:" + page.topSongsMore.browseId)) },
-                                modifier = Modifier.padding(horizontal = 8.dp),
-                            ) { Text("Ver todas las canciones", color = LyraColors.TextSecondary) }
+                                modifier = Modifier.padding(horizontal = 10.dp),
+                            ) { Text("Ver todas las canciones", color = LyraColors.TextSecondary, style = MaterialTheme.typography.labelLarge) }
                             page.topSongs.size > 5 -> TextButton(
                                 onClick = { showAllTop = !showAllTop },
-                                modifier = Modifier.padding(horizontal = 8.dp),
-                            ) { Text(if (showAllTop) "Ver menos" else "Ver más", color = LyraColors.TextSecondary) }
+                                modifier = Modifier.padding(horizontal = 10.dp),
+                            ) { Text(if (showAllTop) "Ver menos" else "Ver más", color = LyraColors.TextSecondary, style = MaterialTheme.typography.labelLarge) }
                         }
                     }
                 }
@@ -165,16 +190,17 @@ fun ArtistScreen(id: String, contentPadding: PaddingValues) {
                 }
                 page.description?.let { description ->
                     item {
-                        SectionHeader("Información")
+                        SectionHeader("Sobre ${artist.title}")
                         Text(
                             description,
                             style = MaterialTheme.typography.bodyMedium,
                             color = LyraColors.TextSecondary,
                             modifier = Modifier
-                                .padding(horizontal = 16.dp)
-                                .clip(RoundedCornerShape(8.dp))
+                                .padding(horizontal = 20.dp)
+                                .clip(RoundedCornerShape(16.dp))
                                 .background(LyraColors.SurfaceHigh)
-                                .padding(16.dp),
+                                .border(1.dp, LyraColors.Border, RoundedCornerShape(16.dp))
+                                .padding(18.dp),
                             maxLines = 12,
                             overflow = TextOverflow.Ellipsis,
                         )

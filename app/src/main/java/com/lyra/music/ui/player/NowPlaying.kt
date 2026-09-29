@@ -1,9 +1,14 @@
 package com.lyra.music.ui.player
 
+import android.os.Build
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -20,26 +25,25 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.QueueMusic
+import androidx.compose.material.icons.automirrored.outlined.QueueMusic
+import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.rounded.Favorite
-import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
-import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material.icons.rounded.RepeatOne
-import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
-import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -58,18 +62,23 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import coil3.compose.AsyncImage
 import com.lyra.music.data.model.Song
 import com.lyra.music.data.source.innertube.hiResArtwork
 import com.lyra.music.data.source.lyrics.Lyrics
@@ -78,6 +87,8 @@ import com.lyra.music.ui.LocalActions
 import com.lyra.music.ui.LocalLibraryState
 import com.lyra.music.ui.SongMenuRequest
 import com.lyra.music.ui.components.Artwork
+import com.lyra.music.ui.components.Eyebrow
+import com.lyra.music.ui.components.pressable
 import com.lyra.music.ui.navigation.EqualizerRoute
 import com.lyra.music.ui.theme.LyraColors
 
@@ -105,10 +116,17 @@ fun rememberLyrics(song: Song?): LyricsState {
     return state
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+/** Clave común de la carátula que "vuela" del mini reproductor a esta pantalla. */
+const val NOW_PLAYING_ART_KEY = "now-playing-art"
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalSharedTransitionApi::class)
 @UnstableApi
 @Composable
-fun NowPlayingScreen(onClose: () -> Unit) {
+fun NowPlayingScreen(
+    onClose: () -> Unit,
+    sharedScope: SharedTransitionScope? = null,
+    visibilityScope: AnimatedVisibilityScope? = null,
+) {
     val actions = LocalActions.current
     val player = actions.container.player
     val state by player.state.collectAsState()
@@ -120,12 +138,13 @@ fun NowPlayingScreen(onClose: () -> Unit) {
 
     var dragY by remember { mutableFloatStateOf(0f) }
     val offsetY by animateFloatAsState(dragY, label = "cerrar")
+    val cover: Any? = song?.let { actions.container.downloads.localCover(it.id) ?: hiResArtwork(it.thumbnailUrl, 1080) }
 
     Box(
         Modifier
             .fillMaxSize()
             .graphicsLayer { translationY = offsetY.coerceAtLeast(0f) }
-            .background(Brush.verticalGradient(listOf(Color(0xFF4A4A4A), Color(0xFF1A1A1A), LyraColors.Background)))
+            .background(LyraColors.Background)
             .pointerInput(Unit) {
                 // Deslizar hacia abajo cierra el reproductor.
                 detectVerticalDragGestures(
@@ -143,6 +162,32 @@ fun NowPlayingScreen(onClose: () -> Unit) {
                 )
             },
     ) {
+        // Fondo: la portada muy difuminada, para que cada canción tenga su ambiente.
+        if (cover != null) {
+            AsyncImage(
+                model = cover,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { scaleX = 1.3f; scaleY = 1.3f }
+                    .blur(110.dp)
+                    .alpha(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) 0.85f else 0.25f),
+            )
+        }
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        0f to LyraColors.Background.copy(alpha = 0.30f),
+                        0.45f to LyraColors.Background.copy(alpha = 0.55f),
+                        0.8f to LyraColors.Background.copy(alpha = 0.88f),
+                        1f to LyraColors.Background,
+                    ),
+                ),
+        )
+
         Column(
             Modifier
                 .fillMaxSize()
@@ -151,36 +196,50 @@ fun NowPlayingScreen(onClose: () -> Unit) {
                 .navigationBarsPadding(),
         ) {
             // Barra superior
-            Row(Modifier.padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onClose) { Icon(Icons.Rounded.KeyboardArrowDown, "Cerrar", modifier = Modifier.size(32.dp)) }
+            Row(Modifier.padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onClose) { Icon(Icons.Rounded.KeyboardArrowDown, "Cerrar", modifier = Modifier.size(30.dp)) }
                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("REPRODUCIENDO DESDE", style = MaterialTheme.typography.labelSmall, color = LyraColors.TextSecondary)
+                    Eyebrow("Reproduciendo desde")
                     Text(
                         state.playingFrom ?: song?.album?.title ?: "Tu cola",
-                        style = MaterialTheme.typography.labelLarge,
+                        style = MaterialTheme.typography.titleSmall,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 2.dp),
                     )
                 }
-                IconButton(onClick = { song?.let { actions.songMenu = SongMenuRequest(it) } }) { Icon(Icons.Rounded.MoreVert, "Más") }
+                IconButton(onClick = { song?.let { actions.songMenu = SongMenuRequest(it) } }) { Icon(Icons.Outlined.MoreVert, "Más") }
             }
 
             if (song == null) {
                 Spacer(Modifier.height(200.dp))
-                Text("No suena nada", modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
+                Text("No suena nada", modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center, color = LyraColors.TextSecondary)
                 return@Column
             }
 
             // Carátula: deslizar a los lados cambia de canción.
             var swipe by remember { mutableFloatStateOf(0f) }
             val swipeAnimated by animateFloatAsState(swipe, label = "carátula")
+            val artShape = RoundedCornerShape(16.dp)
+            val sharedArt = if (sharedScope != null && visibilityScope != null) {
+                with(sharedScope) {
+                    Modifier.sharedElement(
+                        rememberSharedContentState(NOW_PLAYING_ART_KEY),
+                        animatedVisibilityScope = visibilityScope,
+                        clipInOverlayDuringTransition = OverlayClip(artShape),
+                    )
+                }
+            } else {
+                Modifier
+            }
             Box(
                 Modifier
-                    .padding(horizontal = 24.dp, vertical = 20.dp)
+                    .padding(horizontal = 28.dp, vertical = 22.dp)
                     .fillMaxWidth()
                     .aspectRatio(1f)
                     .graphicsLayer {
                         translationX = swipeAnimated
+                        rotationZ = swipeAnimated / 120f
                         alpha = 1f - (kotlin.math.abs(swipeAnimated) / 900f).coerceIn(0f, 0.5f)
                     }
                     .pointerInput(Unit) {
@@ -200,22 +259,21 @@ fun NowPlayingScreen(onClose: () -> Unit) {
                         )
                     },
             ) {
-                val cover = actions.container.downloads.localCover(song.id) ?: hiResArtwork(song.thumbnailUrl, 1080)
                 Artwork(
                     cover,
-                    Modifier
+                    sharedArt
                         .fillMaxSize()
-                        .shadow(24.dp, RoundedCornerShape(8.dp)),
-                    RoundedCornerShape(8.dp),
+                        .shadow(32.dp, artShape, ambientColor = Color.Black, spotColor = Color.Black),
+                    artShape,
                 )
             }
 
-            // Título, artista y corazón
-            Row(Modifier.padding(horizontal = 24.dp), verticalAlignment = Alignment.CenterVertically) {
+            // Título en serif, artista y corazón
+            Row(Modifier.padding(horizontal = 28.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(
                         song.title,
-                        style = MaterialTheme.typography.headlineSmall,
+                        style = MaterialTheme.typography.headlineLarge,
                         maxLines = 1,
                         modifier = Modifier.basicMarquee(),
                     )
@@ -225,20 +283,22 @@ fun NowPlayingScreen(onClose: () -> Unit) {
                         color = LyraColors.TextSecondary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.clickable {
-                            song.artists.firstOrNull { it.id != null }?.let {
-                                onClose()
-                                actions.openArtist(it.id)
-                            }
-                        },
+                        modifier = Modifier
+                            .padding(top = 4.dp)
+                            .clickable {
+                                song.artists.firstOrNull { it.id != null }?.let {
+                                    onClose()
+                                    actions.openArtist(it.id)
+                                }
+                            },
                     )
                 }
+                val isLiked = song.id in liked
                 IconButton(onClick = { actions.toggleLike(song) }) {
-                    val isLiked = song.id in liked
                     Icon(
-                        if (isLiked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                        if (isLiked) Icons.Rounded.Favorite else Icons.Outlined.FavoriteBorder,
                         if (isLiked) "Quitar de Me gusta" else "Me gusta",
-                        tint = if (isLiked) Color.White else LyraColors.TextSecondary,
+                        tint = if (isLiked) LyraColors.Like else LyraColors.TextPrimary,
                         modifier = Modifier.size(28.dp),
                     )
                 }
@@ -250,62 +310,60 @@ fun NowPlayingScreen(onClose: () -> Unit) {
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
+                    .padding(horizontal = 20.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(onClick = player::toggleShuffle) {
-                    Icon(Icons.Rounded.Shuffle, "Aleatorio", tint = if (state.shuffle) Color.White else LyraColors.TextTertiary)
-                }
+                ToggleControl(Icons.Rounded.Shuffle, "Aleatorio", state.shuffle, player::toggleShuffle)
                 IconButton(onClick = player::previous, modifier = Modifier.size(56.dp)) {
-                    Icon(Icons.Rounded.SkipPrevious, "Anterior", modifier = Modifier.size(40.dp))
+                    Icon(Icons.Rounded.SkipPrevious, "Anterior", modifier = Modifier.size(38.dp))
                 }
                 Box(
                     Modifier
-                        .size(68.dp)
+                        .size(74.dp)
+                        .shadow(16.dp, CircleShape, ambientColor = Color.Black, spotColor = Color.Black)
                         .clip(CircleShape)
-                        .background(Color.White)
-                        .clickable(onClick = player::togglePlay),
+                        .background(LyraColors.Accent)
+                        .pressable(pressedScale = 0.92f, onClick = player::togglePlay),
                     contentAlignment = Alignment.Center,
                 ) {
                     if (state.isBuffering && !state.isPlaying) {
-                        CircularProgressIndicator(Modifier.size(30.dp), color = Color.Black, strokeWidth = 3.dp)
+                        CircularProgressIndicator(Modifier.size(30.dp), color = LyraColors.OnAccent, strokeWidth = 3.dp)
                     } else {
                         Icon(
                             if (state.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                             if (state.isPlaying) "Pausa" else "Reproducir",
-                            tint = Color.Black,
+                            tint = LyraColors.OnAccent,
                             modifier = Modifier.size(40.dp),
                         )
                     }
                 }
                 IconButton(onClick = player::next, modifier = Modifier.size(56.dp)) {
-                    Icon(Icons.Rounded.SkipNext, "Siguiente", modifier = Modifier.size(40.dp))
+                    Icon(Icons.Rounded.SkipNext, "Siguiente", modifier = Modifier.size(38.dp))
                 }
-                IconButton(onClick = player::cycleRepeat) {
-                    Icon(
-                        if (state.repeatMode == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
-                        "Repetir",
-                        tint = if (state.repeatMode == Player.REPEAT_MODE_OFF) LyraColors.TextTertiary else Color.White,
-                    )
-                }
+                ToggleControl(
+                    if (state.repeatMode == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
+                    "Repetir",
+                    state.repeatMode != Player.REPEAT_MODE_OFF,
+                    player::cycleRepeat,
+                )
             }
 
             // Fila inferior
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                    .padding(horizontal = 20.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 IconButton(onClick = {
                     onClose()
                     actions.nav.navigate(EqualizerRoute)
-                }) { Icon(Icons.Rounded.Tune, "Ecualizador", tint = LyraColors.TextSecondary) }
+                }) { Icon(Icons.Outlined.Tune, "Ecualizador", tint = LyraColors.TextSecondary) }
                 Spacer(Modifier.weight(1f))
-                IconButton(onClick = { actions.share(song) }) { Icon(Icons.Rounded.Share, "Compartir", tint = LyraColors.TextSecondary) }
+                IconButton(onClick = { actions.share(song) }) { Icon(Icons.Outlined.Share, "Compartir", tint = LyraColors.TextSecondary) }
                 IconButton(onClick = { actions.queueOpen = true }) {
-                    Icon(Icons.AutoMirrored.Rounded.QueueMusic, "Cola", tint = LyraColors.TextSecondary)
+                    Icon(Icons.AutoMirrored.Outlined.QueueMusic, "Cola", tint = LyraColors.TextSecondary)
                 }
             }
 
@@ -317,18 +375,34 @@ fun NowPlayingScreen(onClose: () -> Unit) {
                     textAlign = TextAlign.Center,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 24.dp, vertical = 4.dp),
+                        .padding(horizontal = 28.dp, vertical = 4.dp),
                 )
             }
 
             LyricsCard(lyrics, onOpen = { actions.lyricsOpen = true })
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(28.dp))
         }
     }
 
     if (actions.queueOpen) QueueSheet(onDismiss = { actions.queueOpen = false })
     if (actions.lyricsOpen && lyrics is LyricsState.Found && song != null) {
         LyricsFullScreen(song, lyrics.lyrics, onClose = { actions.lyricsOpen = false })
+    }
+}
+
+/** Aleatorio / repetir: hueso con un puntito debajo cuando están activos. */
+@Composable
+private fun ToggleControl(icon: ImageVector, description: String, active: Boolean, onClick: () -> Unit) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        IconButton(onClick = onClick) {
+            Icon(icon, description, tint = if (active) LyraColors.Accent else LyraColors.TextTertiary)
+        }
+        Box(
+            Modifier
+                .size(4.dp)
+                .clip(CircleShape)
+                .background(if (active) LyraColors.Accent else Color.Transparent),
+        )
     }
 }
 
@@ -342,8 +416,9 @@ private fun SeekBar() {
     var dragValue by remember { mutableFloatStateOf(0f) }
     val duration = progress.durationMs.coerceAtLeast(1)
     val value = if (dragging) dragValue else (progress.positionMs.toFloat() / duration).coerceIn(0f, 1f)
+    val inactive = LyraColors.TextPrimary.copy(alpha = 0.16f)
 
-    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+    Column(Modifier.padding(horizontal = 20.dp, vertical = 10.dp)) {
         Slider(
             value = value,
             onValueChange = {
@@ -354,33 +429,29 @@ private fun SeekBar() {
                 player.seekTo((dragValue * duration).toLong())
                 dragging = false
             },
-            colors = SliderDefaults.colors(
-                thumbColor = Color.White,
-                activeTrackColor = Color.White,
-                inactiveTrackColor = Color(0xFF4D4D4D),
-            ),
+            colors = SliderDefaults.colors(thumbColor = LyraColors.Accent, activeTrackColor = LyraColors.Accent, inactiveTrackColor = inactive),
             thumb = {
                 Box(
                     Modifier
                         .size(if (dragging) 16.dp else 12.dp)
                         .clip(CircleShape)
-                        .background(Color.White),
+                        .background(LyraColors.Accent),
                 )
             },
             track = { sliderState ->
                 SliderDefaults.Track(
                     sliderState = sliderState,
                     modifier = Modifier.height(4.dp),
-                    colors = SliderDefaults.colors(activeTrackColor = Color.White, inactiveTrackColor = Color(0xFF4D4D4D)),
+                    colors = SliderDefaults.colors(activeTrackColor = LyraColors.Accent, inactiveTrackColor = inactive),
                     thumbTrackGapSize = 0.dp,
                     drawStopIndicator = null,
                 )
             },
         )
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
-            Text(formatTime(if (dragging) (dragValue * duration).toLong() else progress.positionMs), style = MaterialTheme.typography.bodySmall, color = LyraColors.TextSecondary)
+            Text(formatTime(if (dragging) (dragValue * duration).toLong() else progress.positionMs), style = MaterialTheme.typography.labelMedium, color = LyraColors.TextSecondary)
             Spacer(Modifier.weight(1f))
-            Text(formatTime(progress.durationMs), style = MaterialTheme.typography.bodySmall, color = LyraColors.TextSecondary)
+            Text(formatTime(progress.durationMs), style = MaterialTheme.typography.labelMedium, color = LyraColors.TextSecondary)
         }
     }
 }
@@ -391,18 +462,19 @@ private fun LyricsCard(state: LyricsState, onOpen: () -> Unit) {
     val progress by LocalActions.current.container.player.progress.collectAsState()
     Column(
         Modifier
-            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .padding(horizontal = 20.dp, vertical = 14.dp)
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(Color(0xFF2B2B2B))
+            .clip(RoundedCornerShape(16.dp))
+            .background(LyraColors.TextPrimary.copy(alpha = 0.07f))
+            .border(1.dp, LyraColors.Border, RoundedCornerShape(16.dp))
             .clickable(enabled = state is LyricsState.Found, onClick = onOpen)
-            .padding(16.dp),
+            .padding(18.dp),
     ) {
-        Text("Letra", style = MaterialTheme.typography.titleMedium)
-        Spacer(Modifier.height(10.dp))
+        Eyebrow("Letra")
+        Spacer(Modifier.height(12.dp))
         when (state) {
-            LyricsState.Loading -> Text("Buscando la letra…", color = LyraColors.TextSecondary)
-            LyricsState.None -> Text("No hay letra para esta canción", color = LyraColors.TextSecondary)
+            LyricsState.Loading -> Text("Buscando la letra…", color = LyraColors.TextSecondary, style = MaterialTheme.typography.bodyMedium)
+            LyricsState.None -> Text("No hay letra para esta canción", color = LyraColors.TextSecondary, style = MaterialTheme.typography.bodyMedium)
             is LyricsState.Found -> {
                 val synced = state.lyrics.synced
                 if (synced != null) {
@@ -411,8 +483,8 @@ private fun LyricsCard(state: LyricsState, onOpen: () -> Unit) {
                         Text(
                             line.text.ifBlank { "♪" },
                             style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = if (index == 0) Color.White else Color(0xFF7D7D7D),
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (index == 0) LyraColors.TextPrimary else LyraColors.TextTertiary,
                             modifier = Modifier.padding(vertical = 3.dp),
                         )
                     }
@@ -426,7 +498,7 @@ private fun LyricsCard(state: LyricsState, onOpen: () -> Unit) {
                 }
                 Text(
                     "Toca para verla entera · ${state.lyrics.source}",
-                    style = MaterialTheme.typography.labelSmall,
+                    style = MaterialTheme.typography.labelMedium,
                     color = LyraColors.TextTertiary,
                     modifier = Modifier.padding(top = 12.dp),
                 )

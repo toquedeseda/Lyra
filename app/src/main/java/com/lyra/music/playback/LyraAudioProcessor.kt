@@ -38,6 +38,19 @@ class LyraAudioProcessor : BaseAudioProcessor() {
     @Volatile var config: AudioFxConfig = AudioFxConfig()
     @Volatile private var newTrackRequested = false
 
+    /** Solo el reproductor principal publica niveles para las barras de la isla. */
+    var publishLevels: Boolean = false
+
+    // Análisis para las barras: graves, medios y agudos del audio que sale.
+    private var lowBand: Biquad? = null
+    private var midBand: Biquad? = null
+    private var highBand: Biquad? = null
+    private var lowEnergy = 0.0
+    private var midEnergy = 0.0
+    private var highEnergy = 0.0
+    private var analysisFrames = 0
+    private var analysisWindow = 1200
+
     private var sampleRate = 0
     private var channels = 0
     private var filters: Array<Array<Biquad>> = emptyArray()
@@ -67,6 +80,10 @@ class LyraAudioProcessor : BaseAudioProcessor() {
         sampleRate = inputAudioFormat.sampleRate
         channels = inputAudioFormat.channelCount
         blockSize = (sampleRate / 10).coerceAtLeast(256)
+        analysisWindow = (sampleRate / 40).coerceAtLeast(128)
+        lowBand = Biquad.lowPass(sampleRate, 160f)
+        midBand = Biquad.bandPass(sampleRate, 1100f, 0.8f)
+        highBand = Biquad.highPass(sampleRate, 5000f)
         appliedConfig = null
         return inputAudioFormat
     }
@@ -92,8 +109,10 @@ class LyraAudioProcessor : BaseAudioProcessor() {
         val activeFilters = if (cfg.eqEnabled) filters else emptyArray()
         var framesUntilUpdate = blockSize - blockFrames
 
+        val analyse = publishLevels
         for (frame in 0 until frames) {
             var frameEnergy = 0.0
+            var mono = 0f
             for (ch in 0 until channels) {
                 var x = input.short / 32768f
                 for (band in activeFilters) x = band[ch].process(x)
@@ -101,8 +120,10 @@ class LyraAudioProcessor : BaseAudioProcessor() {
                 frameEnergy += (x * x).toDouble()
                 var y = x * gainLinear
                 y = softLimit(y)
+                mono += y
                 output.putShort((y * 32767f).toInt().coerceIn(-32768, 32767).toShort())
             }
+            if (analyse) analyse(mono / channels)
             blockEnergy += frameEnergy / channels
             blockFrames++
             trackFrames++
@@ -117,6 +138,28 @@ class LyraAudioProcessor : BaseAudioProcessor() {
             }
         }
         gainDb = linearToDb(gainLinear)
+    }
+
+    private fun analyse(sample: Float) {
+        val low = lowBand?.process(sample) ?: return
+        val mid = midBand?.process(sample) ?: return
+        val high = highBand?.process(sample) ?: return
+        lowEnergy += (low * low).toDouble()
+        midEnergy += (mid * mid).toDouble()
+        highEnergy += (high * high).toDouble()
+        if (++analysisFrames >= analysisWindow) {
+            val n = analysisFrames.toDouble()
+            AudioLevels.push(
+                System.nanoTime(),
+                kotlin.math.sqrt(lowEnergy / n).toFloat(),
+                kotlin.math.sqrt(midEnergy / n).toFloat(),
+                kotlin.math.sqrt(highEnergy / n).toFloat(),
+            )
+            lowEnergy = 0.0
+            midEnergy = 0.0
+            highEnergy = 0.0
+            analysisFrames = 0
+        }
     }
 
     /** Cierra un bloque de ~100 ms: actualiza la sonoridad medida y decide la ganancia. */
@@ -173,6 +216,9 @@ class LyraAudioProcessor : BaseAudioProcessor() {
 
     override fun onFlush() {
         filters.forEach { band -> band.forEach { it.clear() } }
+        lowBand?.clear()
+        midBand?.clear()
+        highBand?.clear()
         resetMeasurement()
     }
 
@@ -206,6 +252,30 @@ class LyraAudioProcessor : BaseAudioProcessor() {
         }
 
         companion object {
+            private fun normalized(b0: Double, b1: Double, b2: Double, a0: Double, a1: Double, a2: Double) =
+                Biquad((b0 / a0).toFloat(), (b1 / a0).toFloat(), (b2 / a0).toFloat(), (a1 / a0).toFloat(), (a2 / a0).toFloat())
+
+            fun lowPass(sampleRate: Int, frequency: Float, q: Float = 0.707f): Biquad {
+                val w0 = 2 * PI * frequency / sampleRate
+                val alpha = sin(w0) / (2 * q)
+                val c = cos(w0)
+                return normalized((1 - c) / 2, 1 - c, (1 - c) / 2, 1 + alpha, -2 * c, 1 - alpha)
+            }
+
+            fun highPass(sampleRate: Int, frequency: Float, q: Float = 0.707f): Biquad {
+                val w0 = 2 * PI * frequency / sampleRate
+                val alpha = sin(w0) / (2 * q)
+                val c = cos(w0)
+                return normalized((1 + c) / 2, -(1 + c), (1 + c) / 2, 1 + alpha, -2 * c, 1 - alpha)
+            }
+
+            fun bandPass(sampleRate: Int, frequency: Float, q: Float): Biquad {
+                val w0 = 2 * PI * frequency / sampleRate
+                val alpha = sin(w0) / (2 * q)
+                val c = cos(w0)
+                return normalized(alpha, 0.0, -alpha, 1 + alpha, -2 * c, 1 - alpha)
+            }
+
             /** Filtro de pico (Audio EQ Cookbook de R. Bristow-Johnson). */
             fun peaking(sampleRate: Int, frequency: Float, q: Float, gainDb: Float): Biquad {
                 val a = 10.0.pow(gainDb / 40.0)
@@ -267,4 +337,59 @@ object EqPresets {
     )
 
     fun byKey(key: String): Preset? = all.firstOrNull { it.key == key }
+}
+
+/**
+ * Niveles recientes de graves, medios y agudos del audio que sale por el
+ * reproductor principal. Se guardan con su marca de tiempo para que la isla
+ * pueda leerlos con el retraso con el que suenan de verdad por el altavoz.
+ */
+object AudioLevels {
+    /** Lo que tarda el audio procesado en salir por el altavoz (aprox.). */
+    const val LATENCY_NANOS = 180_000_000L
+    private const val SIZE = 128
+    private val times = LongArray(SIZE)
+    private val values = FloatArray(SIZE * 3)
+    private var head = 0
+    private var count = 0
+
+    // Pico y suelo recientes de cada banda: se guardan niveles ya normalizados (0..1)
+    // para que las barras tengan movimiento desde el primer instante.
+    private val peak = FloatArray(3) { 1e-3f }
+    private val floor = FloatArray(3) { 1e-3f }
+
+    @Synchronized
+    fun push(timeNanos: Long, low: Float, mid: Float, high: Float) {
+        times[head] = timeNanos
+        values[head * 3] = normalize(0, low)
+        values[head * 3 + 1] = normalize(1, mid)
+        values[head * 3 + 2] = normalize(2, high)
+        head = (head + 1) % SIZE
+        if (count < SIZE) count++
+    }
+
+    private fun normalize(band: Int, value: Float): Float {
+        // El pico baja un ~25 % por segundo; el suelo sube despacio hacia el nivel actual.
+        peak[band] = maxOf(peak[band] * 0.993f, value, 1e-4f)
+        floor[band] = if (value < floor[band]) value else floor[band] + (value - floor[band]) * 0.02f
+        if (peak[band] < 0.002f) return 0f // casi silencio
+        val range = maxOf(peak[band] - floor[band], peak[band] * 0.3f)
+        return ((value - floor[band]) / range).coerceIn(0f, 1f)
+    }
+
+    /** Copia en [out] el nivel (0..1) más reciente anterior a [atNanos]. False si no hay datos frescos. */
+    @Synchronized
+    fun sample(atNanos: Long, out: FloatArray): Boolean {
+        for (i in 0 until count) {
+            val index = (head - 1 - i + SIZE) % SIZE
+            if (times[index] <= atNanos) {
+                if (atNanos - times[index] > 350_000_000L) return false
+                out[0] = values[index * 3]
+                out[1] = values[index * 3 + 1]
+                out[2] = values[index * 3 + 2]
+                return true
+            }
+        }
+        return false
+    }
 }

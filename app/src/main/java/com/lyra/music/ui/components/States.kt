@@ -1,6 +1,9 @@
 package com.lyra.music.ui.components
 
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -11,8 +14,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CloudOff
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -20,9 +21,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -69,7 +68,7 @@ abstract class LoadViewModel<T> : ViewModel() {
 @Composable
 fun LoadingView(modifier: Modifier = Modifier) {
     Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        CircularProgressIndicator(color = Color.White, strokeWidth = 3.dp, modifier = Modifier.size(36.dp))
+        CircularProgressIndicator(color = LyraColors.Accent, strokeWidth = 2.5.dp, modifier = Modifier.size(32.dp))
     }
 }
 
@@ -85,6 +84,7 @@ fun ErrorView(message: String, onRetry: () -> Unit, modifier: Modifier = Modifie
     )
 }
 
+/** Estado vacío con el estilo de la web: tarjeta oscura, texto gris y botón hueso. */
 @Composable
 fun EmptyView(
     icon: ImageVector,
@@ -97,21 +97,20 @@ fun EmptyView(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
+            .padding(horizontal = 20.dp, vertical = 16.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(LyraColors.SurfaceHigh)
+            .border(1.dp, LyraColors.Border, RoundedCornerShape(16.dp))
+            .padding(18.dp),
     ) {
-        Icon(icon, null, tint = LyraColors.TextSecondary, modifier = Modifier.size(56.dp))
-        Spacer(Modifier.height(16.dp))
-        Text(title, style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
-        Spacer(Modifier.height(6.dp))
-        Text(message, style = MaterialTheme.typography.bodyMedium, color = LyraColors.TextSecondary, textAlign = TextAlign.Center)
+        Icon(icon, null, tint = LyraColors.TextTertiary, modifier = Modifier.size(22.dp))
+        Spacer(Modifier.height(12.dp))
+        Text(title, style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.height(4.dp))
+        Text(message, style = MaterialTheme.typography.bodySmall, color = LyraColors.TextSecondary)
         if (action != null) {
-            Spacer(Modifier.height(20.dp))
-            Button(
-                onClick = onAction,
-                colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black),
-            ) { Text(action) }
+            Spacer(Modifier.height(16.dp))
+            PillButton(action, onAction)
         }
     }
 }

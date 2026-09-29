@@ -12,6 +12,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.unit.DpSize
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
@@ -26,7 +27,7 @@ import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.lyra.music.data.settings.AppSettings
 import kotlin.math.roundToInt
 
-/** Posición y tamaño de la isla en píxeles. */
+/** Posición de la isla en píxeles y tamaño de la píldora en dp. */
 data class IslandGeometry(
     val x: Int,
     val y: Int,
@@ -42,7 +43,7 @@ data class IslandGeometry(
             val density = context.resources.displayMetrics.density
             val heightPx = settings.islandHeight * density
             var centerX = 0
-            var top: Int
+            val top: Int
             if (overStatusBar) {
                 val cutout = cutoutRect(context)
                 top = if (cutout != null) {
@@ -77,7 +78,14 @@ data class IslandGeometry(
     }
 }
 
-/** Ventana flotante con Compose dentro, alojada en un servicio (sin actividad). */
+/**
+ * Ventana flotante con Compose dentro, alojada en un servicio.
+ *
+ * El tamaño de la ventana es fijo durante cada animación: antes de crecer se
+ * agranda de una vez y, al terminar de encogerse, se reduce de una vez. Así la
+ * animación ocurre entera dentro de Compose y no "salta" (con WRAP_CONTENT el
+ * sistema recolocaba la ventana en cada fotograma).
+ */
 class IslandWindow(
     private val context: Context,
     private val type: Int,
@@ -85,13 +93,14 @@ class IslandWindow(
     private val controller: IslandController,
 ) {
     private val windowManager = context.getSystemService(WindowManager::class.java)
+    private val density = context.resources.displayMetrics.density
     private val owner = WindowOwner()
     private var geometryState by mutableStateOf(geometry)
     private var attached = false
 
     private val params = WindowManager.LayoutParams(
-        WindowManager.LayoutParams.WRAP_CONTENT,
-        WindowManager.LayoutParams.WRAP_CONTENT,
+        px(geometry.widthDp + IslandMetrics.MARGIN_H * 2),
+        px(geometry.heightDp + IslandMetrics.MARGIN_BOTTOM),
         type,
         WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
             WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
@@ -104,12 +113,13 @@ class IslandWindow(
         gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
         x = geometry.x
         y = geometry.y
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+        layoutInDisplayCutoutMode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
         } else {
-            layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         }
         title = "Lyra isla"
+        windowAnimations = 0
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -120,13 +130,26 @@ class IslandWindow(
         setOnTouchListener { _, event ->
             // Un toque fuera de la isla la recoge.
             if (event.action == MotionEvent.ACTION_OUTSIDE) {
-                controller.collapse()
+                if (controller.shape.value != IslandShape.Pill) controller.collapse()
                 true
             } else {
                 false
             }
         }
-        setContent { IslandContent(controller, geometryState) }
+        setContent { IslandContent(controller, geometryState, onWindowSize = ::resize) }
+    }
+
+    private fun px(dp: Int): Int = (dp * density).roundToInt()
+    private fun px(dp: Float): Int = (dp * density).roundToInt()
+
+    /** Tamaño de la ventana = tamaño de la isla + margen para el rebote del muelle. */
+    private fun resize(size: DpSize) {
+        val width = px(size.width.value + IslandMetrics.MARGIN_H * 2)
+        val height = px(size.height.value + IslandMetrics.MARGIN_BOTTOM)
+        if (params.width == width && params.height == height) return
+        params.width = width
+        params.height = height
+        if (attached) runCatching { windowManager.updateViewLayout(view, params) }
     }
 
     fun show() {
@@ -175,4 +198,14 @@ class IslandWindow(
             viewModelStore.clear()
         }
     }
+}
+
+/** Medidas de la isla (dp). */
+object IslandMetrics {
+    const val MARGIN_H = 10f
+    const val MARGIN_BOTTOM = 14f
+    const val NOTICE_WIDTH = 304f
+    const val NOTICE_HEIGHT = 60f
+    const val EXPANDED_WIDTH = 352f
+    const val EXPANDED_HEIGHT = 196f
 }

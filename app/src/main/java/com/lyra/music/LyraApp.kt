@@ -72,7 +72,9 @@ class AppContainer(val app: Application) {
     }
     val dataSourceFactory by lazy { LyraDataSourceFactory(app, http, streamResolver, downloads, playerCache) }
     val player by lazy { PlayerConnection(app, scope, downloads) }
-    val island by lazy { IslandController(app, settings, scope) }
+    val island by lazy {
+        IslandController(app, settings, scope, downloads.states, library.likedIds) { id -> database.songs().get(id)?.toSong() }
+    }
     val updates by lazy { UpdateRepository(app, http, scope) }
     val backup by lazy { BackupManager(app, database, settings, downloads) }
 

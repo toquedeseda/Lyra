@@ -32,6 +32,7 @@ import com.lyra.music.ui.navigation.LikedRoute
 import com.lyra.music.ui.navigation.LocalPlaylistRoute
 import com.lyra.music.ui.navigation.PlaylistRoute
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /** Menú de una canción, con el contexto desde el que se abrió. */
@@ -109,6 +110,32 @@ class LyraActions(
             is RadioItem -> {
                 container.library.noteContext(item)
                 player.startRadio(item.seed)
+            }
+        }
+    }
+
+    /** Botón de play de las tarjetas: reproduce el álbum, playlist o mix sin entrar. */
+    fun playItem(item: MusicItem) {
+        when (item) {
+            is Song -> startRadio(item)
+            is RadioItem -> open(item)
+            is ArtistItem -> open(item)
+            is AlbumItem, is PlaylistItem -> scope.launch {
+                val songs = runCatching {
+                    when {
+                        item.id == LIKED_SONGS_ID -> container.library.likedList()
+                        item.id == DOWNLOADS_ID -> container.downloads.downloads.first()
+                            .filter { it.downloadState == com.lyra.music.data.db.DownloadState.COMPLETED }.map { it.toSong() }
+                        item.id.startsWith("local:") ->
+                            container.library.playlistSongList(item.id.removePrefix("local:").toLongOrNull() ?: -1)
+                        item is AlbumItem -> container.music.album(item.id).songs
+                        else -> container.music.playlist(item.id).songs
+                    }
+                }.getOrElse {
+                    message("No se pudo cargar «${item.title}»")
+                    return@launch
+                }
+                if (songs.isEmpty()) message("«${item.title}» está vacía") else play(songs, 0, from = item)
             }
         }
     }

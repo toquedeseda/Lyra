@@ -157,7 +157,7 @@ class HomeRepository(
                     seed = seed,
                 )
             }
-            sections += Section("Tus mixes", mixes, subtitle = "Radio infinita con lo que más escuchas")
+            sections += Section("Hecho para ti", mixes, subtitle = "Mixes infinitos con lo que más escuchas")
         }
 
         // Porque escuchaste…: lo relacionado con tu canción favorita del mes.

@@ -22,8 +22,17 @@ class MainActivity : ComponentActivity() {
     private val container get() = (application as LyraApp).container
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        installSplashScreen()
+        val splash = installSplashScreen()
         super.onCreate(savedInstanceState)
+        // Al entrar, el logo crece un poco y se desvanece.
+        splash.setOnExitAnimationListener { provider ->
+            provider.iconView.animate()
+                .scaleX(1.25f).scaleY(1.25f).alpha(0f)
+                .setDuration(320L)
+                .withEndAction { provider.remove() }
+                .start()
+            provider.view.animate().alpha(0f).setStartDelay(120L).setDuration(260L).start()
+        }
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),

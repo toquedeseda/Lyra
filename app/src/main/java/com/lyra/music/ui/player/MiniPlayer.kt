@@ -1,8 +1,13 @@
 package com.lyra.music.ui.player
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,10 +19,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.rounded.Favorite
-import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.CircularProgressIndicator
@@ -34,10 +40,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.util.UnstableApi
@@ -45,11 +51,13 @@ import com.lyra.music.ui.LocalActions
 import com.lyra.music.ui.LocalLibraryState
 import com.lyra.music.ui.components.Artwork
 import com.lyra.music.ui.components.artworkFor
+import com.lyra.music.ui.components.pressable
 import com.lyra.music.ui.theme.LyraColors
 
+@OptIn(ExperimentalSharedTransitionApi::class)
 @UnstableApi
 @Composable
-fun MiniPlayer(modifier: Modifier = Modifier) {
+fun MiniPlayer(modifier: Modifier = Modifier, sharedScope: SharedTransitionScope? = null) {
     val actions = LocalActions.current
     val player = actions.container.player
     val state by player.state.collectAsState()
@@ -59,15 +67,18 @@ fun MiniPlayer(modifier: Modifier = Modifier) {
 
     var dragX by remember { mutableFloatStateOf(0f) }
     val offset by animateFloatAsState(dragX, label = "arrastre")
+    val shape = RoundedCornerShape(16.dp)
 
     Box(
         modifier
-            .padding(horizontal = 8.dp)
+            .padding(horizontal = 10.dp, vertical = 6.dp)
             .fillMaxWidth()
-            .height(58.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(Color(0xFF2E2E2E))
-            .clickable { actions.nowPlayingOpen = true }
+            .height(62.dp)
+            .shadow(18.dp, shape, ambientColor = Color.Black, spotColor = Color.Black)
+            .clip(shape)
+            .background(LyraColors.SurfaceHigh.copy(alpha = 0.97f))
+            .border(1.dp, LyraColors.Border, shape)
+            .pressable(pressedScale = 0.985f) { actions.nowPlayingOpen = true }
             .pointerInput(Unit) {
                 // Deslizar a los lados cambia de canción.
                 detectHorizontalDragGestures(
@@ -89,42 +100,80 @@ fun MiniPlayer(modifier: Modifier = Modifier) {
         Row(
             Modifier
                 .fillMaxHeight()
-                .padding(horizontal = 8.dp)
+                .padding(start = 9.dp, end = 8.dp)
                 .graphicsLayer { translationX = offset * 0.5f },
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Artwork(artworkFor(song), Modifier.size(42.dp))
-            Spacer(Modifier.width(10.dp))
+            val artModifier = Modifier.size(44.dp)
+            if (sharedScope != null) {
+                // La carátula "vuela" hasta la pantalla de reproducción.
+                with(sharedScope) {
+                    AnimatedVisibility(visible = !actions.nowPlayingOpen, enter = fadeIn(), exit = fadeOut()) {
+                        Artwork(
+                            artworkFor(song),
+                            artModifier.sharedElement(
+                                rememberSharedContentState(NOW_PLAYING_ART_KEY),
+                                animatedVisibilityScope = this,
+                                clipInOverlayDuringTransition = OverlayClip(RoundedCornerShape(10.dp)),
+                            ),
+                            RoundedCornerShape(10.dp),
+                        )
+                    }
+                    if (actions.nowPlayingOpen) Spacer(artModifier)
+                }
+            } else {
+                Artwork(artworkFor(song), artModifier, RoundedCornerShape(10.dp))
+            }
+            Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(song.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(song.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(song.artistsText, style = MaterialTheme.typography.bodySmall, color = LyraColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
+            val isLiked = song.id in liked
             IconButton(onClick = { actions.toggleLike(song) }) {
-                val isLiked = song.id in liked
-                Icon(if (isLiked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, "Me gusta", tint = if (isLiked) Color.White else LyraColors.TextSecondary)
+                Icon(
+                    if (isLiked) Icons.Rounded.Favorite else Icons.Outlined.FavoriteBorder,
+                    "Me gusta",
+                    tint = if (isLiked) LyraColors.Like else LyraColors.TextSecondary,
+                    modifier = Modifier.size(22.dp),
+                )
             }
-            IconButton(onClick = player::togglePlay) {
+            Box(
+                Modifier
+                    .size(38.dp)
+                    .clip(CircleShape)
+                    .background(LyraColors.Accent)
+                    .pressable(pressedScale = 0.9f, onClick = player::togglePlay),
+                contentAlignment = Alignment.Center,
+            ) {
                 if (state.isBuffering && !state.isPlaying) {
-                    CircularProgressIndicator(Modifier.size(22.dp), color = Color.White, strokeWidth = 2.dp)
+                    CircularProgressIndicator(Modifier.size(18.dp), color = LyraColors.OnAccent, strokeWidth = 2.dp)
                 } else {
-                    Icon(if (state.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, if (state.isPlaying) "Pausa" else "Reproducir", modifier = Modifier.size(30.dp))
+                    Icon(
+                        if (state.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                        if (state.isPlaying) "Pausa" else "Reproducir",
+                        tint = LyraColors.OnAccent,
+                        modifier = Modifier.size(24.dp),
+                    )
                 }
             }
         }
+        // Línea de progreso fina, dentro de la píldora.
         val fraction = if (progress.durationMs > 0) (progress.positionMs.toFloat() / progress.durationMs).coerceIn(0f, 1f) else 0f
         Box(
             Modifier
                 .align(Alignment.BottomStart)
-                .padding(horizontal = 8.dp)
+                .padding(horizontal = 14.dp)
                 .fillMaxWidth()
                 .height(2.dp)
-                .background(Color(0xFF555555)),
+                .clip(RoundedCornerShape(1.dp))
+                .background(LyraColors.TextPrimary.copy(alpha = 0.12f)),
         ) {
             Box(
                 Modifier
                     .fillMaxWidth(fraction)
                     .fillMaxHeight()
-                    .background(Color.White),
+                    .background(LyraColors.Accent),
             )
         }
     }

@@ -82,7 +82,7 @@ fun UpdateDialog(
                             .fillMaxWidth()
                             .height(6.dp)
                             .clip(RoundedCornerShape(3.dp)),
-                        color = Color.White,
+                        color = LyraColors.Accent,
                         trackColor = LyraColors.SurfaceHigher,
                     )
                     Text(
@@ -98,7 +98,7 @@ fun UpdateDialog(
                         color = LyraColors.TextSecondary,
                     )
                     Spacer(Modifier.height(16.dp))
-                    LinearProgressIndicator(Modifier.fillMaxWidth(), color = Color.White, trackColor = LyraColors.SurfaceHigher)
+                    LinearProgressIndicator(Modifier.fillMaxWidth(), color = LyraColors.Accent, trackColor = LyraColors.SurfaceHigher)
                 }
                 is UpdateState.NeedsPermission -> {
                     Text(
@@ -144,21 +144,22 @@ fun WhatsNewDialog(version: String, notes: String, onDismiss: () -> Unit) {
 private fun DialogCard(icon: ImageVector, title: String, content: @Composable () -> Unit) {
     Card(
         shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = LyraColors.SurfaceHigh),
+        colors = CardDefaults.cardColors(containerColor = LyraColors.Surface),
+        border = androidx.compose.foundation.BorderStroke(1.dp, LyraColors.Border),
     ) {
         Column(Modifier.padding(22.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     icon,
                     null,
-                    tint = Color.Black,
+                    tint = LyraColors.OnAccent,
                     modifier = Modifier
                         .size(36.dp)
                         .clip(CircleShape)
-                        .background(Color.White)
+                        .background(LyraColors.Accent)
                         .padding(7.dp),
                 )
-                Text(title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(start = 12.dp))
+                Text(title, style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(start = 14.dp))
             }
             Spacer(Modifier.height(16.dp))
             content()
@@ -202,8 +203,8 @@ private fun Buttons(secondary: Pair<String, () -> Unit>?, primary: Pair<String, 
         }
         Button(
             onClick = primary.second,
-            colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black),
-        ) { Text(primary.first) }
+            colors = ButtonDefaults.buttonColors(containerColor = LyraColors.Accent, contentColor = LyraColors.OnAccent),
+        ) { Text(primary.first, style = MaterialTheme.typography.labelLarge) }
     }
 }
 

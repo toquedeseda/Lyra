@@ -1,6 +1,9 @@
 package com.lyra.music.ui.search
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -24,6 +27,8 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.automirrored.rounded.CallMade
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.History
@@ -73,6 +78,9 @@ import com.lyra.music.ui.LocalActions
 import com.lyra.music.ui.components.Artwork
 import com.lyra.music.ui.components.ChipRow
 import com.lyra.music.ui.components.EmptyView
+import com.lyra.music.ui.components.Eyebrow
+import com.lyra.music.ui.components.Pill
+import com.lyra.music.ui.components.pressable
 import com.lyra.music.ui.components.ErrorView
 import com.lyra.music.ui.components.ItemRow
 import com.lyra.music.ui.components.Loadable
@@ -200,12 +208,18 @@ fun SearchScreen(contentPadding: PaddingValues) {
         Column(
             Modifier
                 .statusBarsPadding()
-                .padding(horizontal = 16.dp),
+                .padding(horizontal = 20.dp),
         ) {
             if (!focused && vm.submitted == null) {
-                Text("Buscar", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(top = 12.dp, bottom = 12.dp))
+                Text("Buscar", style = MaterialTheme.typography.displayMedium, modifier = Modifier.padding(top = 22.dp))
+                Text(
+                    "Canciones, artistas y álbumes de YouTube Music y SoundCloud. También puedes pegar un enlace.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = LyraColors.TextSecondary,
+                    modifier = Modifier.padding(top = 8.dp, bottom = 20.dp),
+                )
             } else {
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(14.dp))
             }
             SearchField(
                 value = vm.query,
@@ -256,24 +270,25 @@ private fun SearchField(
     Row(
         Modifier
             .fillMaxWidth()
-            .height(48.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(Color.White)
-            .padding(horizontal = 12.dp),
+            .height(52.dp)
+            .clip(RoundedCornerShape(50))
+            .background(LyraColors.Surface)
+            .border(1.dp, LyraColors.Border, RoundedCornerShape(50))
+            .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(Icons.Rounded.Search, null, tint = Color.Black)
-        Spacer(Modifier.width(10.dp))
+        Icon(Icons.Outlined.Search, null, tint = LyraColors.TextSecondary, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(12.dp))
         Box(Modifier.weight(1f)) {
             if (value.isEmpty()) {
-                Text("¿Qué te apetece escuchar?", color = Color(0xFF6A6A6A), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                Text("Canciones, artistas, géneros", color = LyraColors.TextTertiary, style = MaterialTheme.typography.bodyLarge)
             }
             BasicTextField(
                 value = value,
                 onValueChange = onValueChange,
                 singleLine = true,
-                textStyle = TextStyle(color = Color.Black, fontSize = 16.sp, fontWeight = FontWeight.Medium),
-                cursorBrush = SolidColor(Color.Black),
+                textStyle = MaterialTheme.typography.bodyLarge.copy(color = LyraColors.TextPrimary),
+                cursorBrush = SolidColor(LyraColors.Accent),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = { onSubmit() }),
                 modifier = modifier.fillMaxWidth(),
@@ -281,7 +296,7 @@ private fun SearchField(
         }
         if (value.isNotEmpty()) {
             IconButton(onClick = onClear, modifier = Modifier.size(32.dp)) {
-                Icon(Icons.Rounded.Close, "Borrar", tint = Color.Black)
+                Icon(Icons.Rounded.Close, "Borrar", tint = LyraColors.TextSecondary)
             }
         }
     }
@@ -301,10 +316,10 @@ private fun Suggestions(
                 Modifier
                     .fillMaxWidth()
                     .clickable { onQuery(text) }
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                    .padding(horizontal = 20.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(Icons.Rounded.Search, null, tint = LyraColors.TextSecondary)
+                Icon(Icons.Outlined.Search, null, tint = LyraColors.TextTertiary, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(16.dp))
                 Text(text, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                 Icon(Icons.AutoMirrored.Rounded.CallMade, null, tint = LyraColors.TextTertiary, modifier = Modifier.size(18.dp))
@@ -316,6 +331,7 @@ private fun Suggestions(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @UnstableApi
 @Composable
 private fun Explore(vm: SearchViewModel, contentPadding: PaddingValues, onRecent: (String) -> Unit) {
@@ -325,17 +341,17 @@ private fun Explore(vm: SearchViewModel, contentPadding: PaddingValues, onRecent
     LazyColumn(contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding() + 16.dp)) {
         if (recent.isNotEmpty()) {
             item {
-                Text("Búsquedas recientes", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(16.dp))
+                Text("Búsquedas recientes", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 8.dp))
             }
             items(recent, key = { "r$it" }) { text ->
                 Row(
                     Modifier
                         .fillMaxWidth()
                         .clickable { onRecent(text) }
-                        .padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+                        .padding(start = 20.dp, end = 8.dp, top = 2.dp, bottom = 2.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(Icons.Rounded.History, null, tint = LyraColors.TextSecondary)
+                    Icon(Icons.Outlined.History, null, tint = LyraColors.TextTertiary, modifier = Modifier.size(20.dp))
                     Spacer(Modifier.width(16.dp))
                     Text(text, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     IconButton(onClick = { vm.removeRecent(text) }) { Icon(Icons.Rounded.Close, "Quitar", tint = LyraColors.TextTertiary) }
@@ -344,39 +360,28 @@ private fun Explore(vm: SearchViewModel, contentPadding: PaddingValues, onRecent
         }
         when (val state = moods) {
             is Loadable.Ready -> state.value.forEach { group ->
-                item {
-                    Text(group.title.ifEmpty { "Explorar" }, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(16.dp))
-                }
-                items(group.categories.chunked(2), key = { row -> "m${group.title}${row.first().title}" }) { row ->
-                    Row(Modifier.padding(horizontal = 16.dp, vertical = 5.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        row.forEachIndexed { index, mood ->
-                            MoodTile(mood.title, shade = (group.categories.indexOf(mood) % 5), modifier = Modifier.weight(1f)) {
+                item(key = "m-${group.title}") {
+                    Text(
+                        group.title.ifEmpty { "Explorar" },
+                        style = MaterialTheme.typography.headlineSmall,
+                        modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 26.dp, bottom = 14.dp),
+                    )
+                    FlowRow(
+                        modifier = Modifier.padding(horizontal = 20.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        group.categories.forEach { mood ->
+                            Pill(mood.title) {
                                 actions.nav.navigate(BrowseRoute(mood.endpoint.browseId, mood.endpoint.params, mood.title))
                             }
                         }
-                        if (row.size == 1) Spacer(Modifier.weight(1f))
                     }
                 }
             }
             is Loadable.Error -> item { ErrorView(state.message, onRetry = vm::loadMoods) }
             Loadable.Loading -> item { LoadingView(Modifier.height(200.dp)) }
         }
-    }
-}
-
-@Composable
-private fun MoodTile(title: String, shade: Int, modifier: Modifier, onClick: () -> Unit) {
-    // Distintos grises para que la rejilla no sea plana.
-    val colors = listOf(Color(0xFF3A3A3A), Color(0xFF2C2C2C), Color(0xFF454545), Color(0xFF333333), Color(0xFF262626))
-    Box(
-        modifier
-            .height(92.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(Brush.linearGradient(listOf(colors[shade], Color(0xFF151515))))
-            .clickable(onClick = onClick)
-            .padding(12.dp),
-    ) {
-        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
     }
 }
 
@@ -414,21 +419,22 @@ private fun Results(vm: SearchViewModel, contentPadding: PaddingValues) {
 @Composable
 private fun TopResult(item: MusicItem) {
     val actions = LocalActions.current
-    Column(Modifier.padding(16.dp)) {
-        Text("Resultado principal", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 10.dp))
+    Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
+        Eyebrow("Resultado principal", Modifier.padding(bottom = 10.dp))
         Box(
             Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(10.dp))
+                .clip(RoundedCornerShape(16.dp))
                 .background(LyraColors.SurfaceHigh)
-                .clickable { actions.open(item) }
-                .padding(16.dp),
+                .border(1.dp, LyraColors.Border, RoundedCornerShape(16.dp))
+                .pressable { actions.open(item) }
+                .padding(18.dp),
         ) {
             Column {
                 val model = if (item is Song) artworkFor(item) else item.thumbnailUrl
-                Artwork(model, Modifier.size(96.dp), if (item is ArtistItem) CircleShape else RoundedCornerShape(6.dp))
+                Artwork(model, Modifier.size(96.dp), if (item is ArtistItem) CircleShape else RoundedCornerShape(12.dp))
                 Spacer(Modifier.height(14.dp))
-                Text(item.title, style = MaterialTheme.typography.headlineSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(item.title, style = MaterialTheme.typography.headlineMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(subtitleOf(item), style = MaterialTheme.typography.bodyMedium, color = LyraColors.TextSecondary, maxLines = 1)
             }
             if (item is Song || item is AlbumItem || item is ArtistItem) {

@@ -45,7 +45,7 @@ import com.lyra.music.BuildConfig
 import com.lyra.music.data.settings.AppSettings
 import com.lyra.music.data.source.soundcloud.AudioQuality
 import com.lyra.music.ui.LocalActions
-import com.lyra.music.ui.components.BackBar
+import com.lyra.music.ui.components.PageHeader
 import com.lyra.music.ui.components.ConfirmDialog
 import com.lyra.music.ui.home.ignoresBatteryOptimizations
 import com.lyra.music.ui.home.openBatterySettings
@@ -95,7 +95,7 @@ fun SettingsScreen(contentPadding: PaddingValues) {
     }
 
     Column(Modifier.fillMaxSize()) {
-        BackBar("Ajustes")
+        PageHeader("Ajustes", "Reproducción, descargas, isla y copias de seguridad.")
         LazyColumn(contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding() + 24.dp)) {
             item { Group("Reproducción") }
             item { NavRow("Calidad de streaming", qualityLabel(s.streamQuality)) { qualityDialog = "stream" } }
@@ -244,8 +244,8 @@ private fun qualityDescription(quality: AudioQuality) = when (quality) {
 fun Group(title: String) {
     Text(
         title,
-        style = MaterialTheme.typography.titleLarge,
-        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 28.dp, bottom = 6.dp),
+        style = MaterialTheme.typography.headlineSmall,
+        modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 30.dp, bottom = 6.dp),
     )
 }
 
@@ -255,7 +255,7 @@ fun NavRow(title: String, subtitle: String, onClick: () -> Unit) {
         Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = 20.dp, vertical = 12.dp),
     ) {
         Text(title, style = MaterialTheme.typography.bodyLarge)
         if (subtitle.isNotEmpty()) Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = LyraColors.TextSecondary)
@@ -264,7 +264,7 @@ fun NavRow(title: String, subtitle: String, onClick: () -> Unit) {
 
 @Composable
 fun InfoRow(title: String, subtitle: String) {
-    Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+    Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
         Text(title, style = MaterialTheme.typography.bodyLarge)
         Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = LyraColors.TextSecondary)
     }
@@ -276,7 +276,7 @@ fun SwitchRow(title: String, subtitle: String?, checked: Boolean, onChange: (Boo
         Modifier
             .fillMaxWidth()
             .clickable { onChange(!checked) }
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+            .padding(horizontal = 20.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
@@ -288,8 +288,8 @@ fun SwitchRow(title: String, subtitle: String?, checked: Boolean, onChange: (Boo
             checked = checked,
             onCheckedChange = onChange,
             colors = SwitchDefaults.colors(
-                checkedThumbColor = Color.Black,
-                checkedTrackColor = Color.White,
+                checkedThumbColor = LyraColors.OnAccent,
+                checkedTrackColor = LyraColors.Accent,
                 uncheckedThumbColor = LyraColors.TextSecondary,
                 uncheckedTrackColor = LyraColors.SurfaceHigher,
                 uncheckedBorderColor = LyraColors.SurfaceHigher,
@@ -309,7 +309,7 @@ fun SliderRow(
     onChange: (Float) -> Unit,
 ) {
     var local by remember(value) { mutableFloatStateOf(value) }
-    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+    Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
         Row {
             Text(title, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
             Text(valueLabel, style = MaterialTheme.typography.bodyMedium, color = LyraColors.TextSecondary)
@@ -322,10 +322,10 @@ fun SliderRow(
             valueRange = range,
             steps = steps,
             colors = SliderDefaults.colors(
-                thumbColor = Color.White,
-                activeTrackColor = Color.White,
+                thumbColor = LyraColors.Accent,
+                activeTrackColor = LyraColors.Accent,
                 inactiveTrackColor = LyraColors.SurfaceHigher,
-                activeTickColor = Color.Black,
+                activeTickColor = LyraColors.OnAccent,
                 inactiveTickColor = LyraColors.TextTertiary,
             ),
         )
@@ -342,8 +342,8 @@ fun ChoiceDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = LyraColors.SurfaceHigh,
-        title = { Text(title) },
+        containerColor = LyraColors.Surface,
+        title = { Text(title, style = MaterialTheme.typography.headlineMedium) },
         text = {
             Column {
                 options.forEachIndexed { index, (label, description) ->
@@ -357,7 +357,7 @@ fun ChoiceDialog(
                         RadioButton(
                             selected = index == selected,
                             onClick = { onSelect(index) },
-                            colors = RadioButtonDefaults.colors(selectedColor = Color.White),
+                            colors = RadioButtonDefaults.colors(selectedColor = LyraColors.Accent, unselectedColor = LyraColors.TextTertiary),
                         )
                         Column {
                             Text(label, style = MaterialTheme.typography.bodyLarge)
@@ -367,6 +367,6 @@ fun ChoiceDialog(
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Cerrar", color = Color.White) } },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Cerrar", color = LyraColors.Accent, style = MaterialTheme.typography.labelLarge) } },
     )
 }

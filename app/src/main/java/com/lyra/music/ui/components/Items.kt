@@ -1,14 +1,23 @@
 package com.lyra.music.ui.components
 
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -18,35 +27,39 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyHorizontalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Favorite
-import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Shuffle
-import androidx.compose.material.icons.rounded.Radio
-import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -71,7 +84,107 @@ import com.lyra.music.data.repo.LIKED_SONGS_ID
 import com.lyra.music.island.EqualizerBars
 import com.lyra.music.ui.LocalActions
 import com.lyra.music.ui.LocalLibraryState
+import com.lyra.music.ui.SongMenuRequest
 import com.lyra.music.ui.theme.LyraColors
+
+// ------------------------------------------------------------------ interacción
+
+/** Pulsación con un pequeño encogimiento (como en iOS), sin onda de Material. */
+@OptIn(ExperimentalFoundationApi::class)
+fun Modifier.pressable(
+    onLongClick: (() -> Unit)? = null,
+    pressedScale: Float = 0.97f,
+    onClick: () -> Unit,
+): Modifier = composed {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        if (pressed) pressedScale else 1f,
+        spring(dampingRatio = 0.6f, stiffness = Spring.StiffnessMediumLow),
+        label = "pulsación",
+    )
+    this
+        .graphicsLayer {
+            scaleX = scale
+            scaleY = scale
+        }
+        .combinedClickable(interactionSource = interaction, indication = null, onClick = onClick, onLongClick = onLongClick)
+}
+
+fun Modifier.combinedClickableCompat(onClick: () -> Unit): Modifier = this.clickable(onClick = onClick)
+
+// ------------------------------------------------------------------ textos y botones
+
+/** Etiqueta pequeña en mayúsculas espaciadas ("LYRA", "ÁLBUM · 2025"…). */
+@Composable
+fun Eyebrow(text: String, modifier: Modifier = Modifier, color: Color = LyraColors.TextSecondary) {
+    Text(text.uppercase(), style = MaterialTheme.typography.labelSmall, color = color, modifier = modifier, maxLines = 1)
+}
+
+/** Botón píldora color hueso (acción principal). */
+@Composable
+fun PillButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, icon: ImageVector? = null) {
+    Row(
+        modifier = modifier
+            .height(40.dp)
+            .clip(RoundedCornerShape(50))
+            .background(LyraColors.Accent)
+            .pressable(onClick = onClick)
+            .padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (icon != null) {
+            Icon(icon, null, tint = LyraColors.OnAccent, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+        }
+        Text(text, color = LyraColors.OnAccent, style = MaterialTheme.typography.labelLarge)
+    }
+}
+
+/** Botón píldora oscuro (acción secundaria). */
+@Composable
+fun GhostPillButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, icon: ImageVector? = null) {
+    Row(
+        modifier = modifier
+            .height(38.dp)
+            .clip(RoundedCornerShape(50))
+            .background(LyraColors.SurfaceHigh)
+            .border(1.dp, LyraColors.Border, RoundedCornerShape(50))
+            .pressable(onClick = onClick)
+            .padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (icon != null) {
+            Icon(icon, null, tint = LyraColors.TextPrimary, modifier = Modifier.size(17.dp))
+            Spacer(Modifier.width(7.dp))
+        }
+        Text(text, color = LyraColors.TextPrimary, style = MaterialTheme.typography.labelLarge)
+    }
+}
+
+/** Tarjeta de aviso como la de "Instalar Lira'": título, texto y acciones. */
+@Composable
+fun InfoCard(
+    title: String,
+    text: String,
+    modifier: Modifier = Modifier,
+    actions: @Composable RowScope.() -> Unit = {},
+) {
+    Column(
+        modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(LyraColors.SurfaceHigh)
+            .border(1.dp, LyraColors.Border, RoundedCornerShape(16.dp))
+            .padding(16.dp),
+    ) {
+        Text(title, style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.height(4.dp))
+        Text(text, style = MaterialTheme.typography.bodySmall, color = LyraColors.TextSecondary)
+        Spacer(Modifier.height(14.dp))
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp), content = actions)
+    }
+}
 
 // ------------------------------------------------------------------ carátulas
 
@@ -84,43 +197,52 @@ fun artworkFor(song: Song): Any? =
 fun Artwork(
     model: Any?,
     modifier: Modifier = Modifier,
-    shape: Shape = RoundedCornerShape(4.dp),
+    shape: Shape = RoundedCornerShape(8.dp),
     placeholder: ImageVector = Icons.Rounded.MusicNote,
 ) {
     Box(
         modifier = modifier
             .clip(shape)
-            .background(LyraColors.SurfaceHigher),
+            .background(LyraColors.SurfaceHigh),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(placeholder, null, tint = LyraColors.TextTertiary, modifier = Modifier.fillMaxSize(0.4f))
+        Icon(placeholder, null, tint = LyraColors.TextTertiary, modifier = Modifier.fillMaxSize(0.36f))
         if (model != null) {
-            AsyncImage(
-                model = model,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
-            )
+            AsyncImage(model = model, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
         }
     }
 }
 
-/** Portada especial de "Canciones que te gustan" y "Descargas". */
+/**
+ * Portadas de "Canciones que te gustan" (baldosa hueso con corazón oscuro, como
+ * en la web) y "Descargas" (baldosa oscura con borde).
+ */
 @Composable
-fun SpecialCover(icon: ImageVector, modifier: Modifier = Modifier, shape: Shape = RoundedCornerShape(4.dp)) {
+fun SpecialCover(
+    icon: ImageVector,
+    modifier: Modifier = Modifier,
+    shape: Shape = RoundedCornerShape(12.dp),
+    filled: Boolean = icon == Icons.Rounded.Favorite,
+) {
     Box(
         modifier = modifier
             .clip(shape)
-            .background(Brush.linearGradient(listOf(Color(0xFF5A5A5A), Color(0xFF1A1A1A)))),
+            .background(if (filled) LyraColors.Accent else LyraColors.Background)
+            .then(if (filled) Modifier else Modifier.border(1.dp, LyraColors.Border, shape)),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(icon, null, tint = Color.White, modifier = Modifier.fillMaxSize(0.42f))
+        Icon(
+            icon,
+            null,
+            tint = if (filled) LyraColors.OnAccent else LyraColors.TextPrimary,
+            modifier = Modifier.fillMaxSize(0.38f),
+        )
     }
 }
 
 /** Mosaico 2×2 para playlists locales. */
 @Composable
-fun Mosaic(urls: List<String>, modifier: Modifier = Modifier, shape: Shape = RoundedCornerShape(4.dp)) {
+fun Mosaic(urls: List<String>, modifier: Modifier = Modifier, shape: Shape = RoundedCornerShape(12.dp)) {
     if (urls.size < 4) {
         Artwork(urls.firstOrNull(), modifier, shape)
         return
@@ -138,36 +260,34 @@ fun Mosaic(urls: List<String>, modifier: Modifier = Modifier, shape: Shape = Rou
 }
 
 @Composable
-private fun ItemArtwork(item: MusicItem, modifier: Modifier) {
+private fun ItemArtwork(item: MusicItem, modifier: Modifier, shape: Shape = RoundedCornerShape(12.dp)) {
     when {
-        item.id == LIKED_SONGS_ID -> SpecialCover(Icons.Rounded.Favorite, modifier)
-        item.id == DOWNLOADS_ID -> SpecialCover(Icons.Rounded.ArrowDownward, modifier)
+        item.id == LIKED_SONGS_ID -> SpecialCover(Icons.Rounded.Favorite, modifier, shape, filled = true)
+        item.id == DOWNLOADS_ID -> SpecialCover(Icons.Rounded.ArrowDownward, modifier, shape, filled = false)
         item is ArtistItem -> Artwork(item.thumbnailUrl, modifier, CircleShape, Icons.Rounded.Person)
-        item is RadioItem -> Box(modifier) {
-            Artwork(item.thumbnailUrl, Modifier.fillMaxSize())
+        item is RadioItem -> Box(modifier.clip(shape)) {
+            Artwork(item.thumbnailUrl, Modifier.fillMaxSize(), shape)
+            // Velo para que el nombre del mix se lea sobre cualquier portada.
             Box(
                 Modifier
                     .fillMaxSize()
-                    .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xCC000000)))),
+                    .background(Brush.verticalGradient(0f to Color(0x33000000), 0.55f to Color.Transparent, 1f to Color(0xB3000000))),
             )
-            Row(
-                Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(Icons.Rounded.Radio, null, tint = Color.White, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(4.dp))
-                Text(item.title, color = Color.White, fontWeight = FontWeight.Black, fontSize = 16.sp)
-            }
+            Text(
+                item.title,
+                color = LyraColors.TextPrimary,
+                style = MaterialTheme.typography.headlineMedium,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(12.dp),
+            )
         }
-        else -> Artwork(item.thumbnailUrl, modifier)
+        else -> Artwork(item.thumbnailUrl, modifier, shape)
     }
 }
 
 // ------------------------------------------------------------------ filas
 
-@OptIn(ExperimentalFoundationApi::class)
 @UnstableApi
 @Composable
 fun SongRow(
@@ -184,71 +304,69 @@ fun SongRow(
     val state = LocalLibraryState.current
     val isCurrent = state.currentSongId == song.id
     val download = state.downloads[song.id]
+    val openMenu = { actions.songMenu = SongMenuRequest(song, localPlaylistId, queueIndex) }
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .combinedClickable(
-                onClick = onClick,
-                onLongClick = { actions.songMenu = com.lyra.music.ui.SongMenuRequest(song, localPlaylistId, queueIndex) },
-            )
-            .padding(horizontal = 16.dp, vertical = 7.dp),
+            .pressable(onLongClick = openMenu, pressedScale = 0.985f, onClick = onClick)
+            .padding(start = 20.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (index != null) {
-            Box(Modifier.width(32.dp), contentAlignment = Alignment.CenterStart) {
+            Box(Modifier.width(30.dp), contentAlignment = Alignment.CenterStart) {
                 if (isCurrent) {
-                    EqualizerBars(state.isPlaying, Modifier.size(14.dp))
+                    EqualizerBars(state.isPlaying, Modifier.size(14.dp), color = LyraColors.Accent)
                 } else {
-                    Text("$index", color = LyraColors.TextSecondary, style = MaterialTheme.typography.bodyMedium)
+                    Text("$index", color = LyraColors.TextTertiary, style = MaterialTheme.typography.bodyMedium)
                 }
             }
         }
         if (showArtwork) {
             Box {
-                Artwork(artworkFor(song), Modifier.size(50.dp))
+                Artwork(artworkFor(song), Modifier.size(52.dp), RoundedCornerShape(10.dp))
                 if (isCurrent && index == null) {
                     Box(
                         Modifier
-                            .size(50.dp)
-                            .clip(RoundedCornerShape(4.dp))
+                            .size(52.dp)
+                            .clip(RoundedCornerShape(10.dp))
                             .background(Color(0x99000000)),
                         contentAlignment = Alignment.Center,
-                    ) { EqualizerBars(state.isPlaying, Modifier.size(18.dp)) }
+                    ) { EqualizerBars(state.isPlaying, Modifier.size(18.dp), color = LyraColors.Accent) }
                 }
             }
-            Spacer(Modifier.width(12.dp))
+            Spacer(Modifier.width(14.dp))
         }
         Column(Modifier.weight(1f)) {
             Text(
                 song.title,
                 color = LyraColors.TextPrimary,
-                fontWeight = if (isCurrent) FontWeight.Black else FontWeight.Medium,
+                fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.SemiBold,
                 style = MaterialTheme.typography.bodyLarge,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            Spacer(Modifier.height(1.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (song.id in state.likedIds) {
-                    Icon(Icons.Rounded.Favorite, "Me gusta", tint = Color.White, modifier = Modifier.size(13.dp))
-                    Spacer(Modifier.width(4.dp))
-                }
                 DownloadIndicator(download?.state, download?.progress)
                 if (song.explicit) ExplicitBadge()
                 if (song.source == Source.SOUNDCLOUD) SourceBadge("SC")
                 Text(
-                    listOfNotNull(if (song.isVideo && song.album == null) "Vídeo" else null, song.artistsText.ifEmpty { null }).joinToString(" • "),
+                    listOfNotNull(if (song.isVideo && song.album == null) "Vídeo" else null, song.artistsText.ifEmpty { null }).joinToString(" · "),
                     color = LyraColors.TextSecondary,
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodySmall,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
         }
+        if (song.id in state.likedIds) {
+            Icon(Icons.Rounded.Favorite, "Me gusta", tint = LyraColors.Like, modifier = Modifier.padding(start = 8.dp).size(16.dp))
+        }
         if (trailing != null) {
             trailing()
         } else {
-            IconButton(onClick = { actions.songMenu = com.lyra.music.ui.SongMenuRequest(song, localPlaylistId, queueIndex) }) {
-                Icon(Icons.Rounded.MoreVert, "Más opciones", tint = LyraColors.TextSecondary)
+            IconButton(onClick = openMenu) {
+                Icon(Icons.Outlined.MoreVert, "Más opciones", tint = LyraColors.TextTertiary, modifier = Modifier.size(20.dp))
             }
         }
     }
@@ -258,22 +376,22 @@ fun SongRow(
 fun DownloadIndicator(state: Int?, progress: Float?) {
     when (state) {
         DownloadState.COMPLETED -> {
-            Icon(Icons.Rounded.CheckCircle, "Descargada", tint = Color.White, modifier = Modifier.size(13.dp))
-            Spacer(Modifier.width(4.dp))
+            Icon(Icons.Rounded.CheckCircle, "Descargada", tint = LyraColors.Accent, modifier = Modifier.size(13.dp))
+            Spacer(Modifier.width(5.dp))
         }
         DownloadState.DOWNLOADING -> {
             CircularProgressIndicator(
                 progress = { progress ?: 0f },
                 modifier = Modifier.size(12.dp),
                 strokeWidth = 2.dp,
-                color = Color.White,
+                color = LyraColors.Accent,
                 trackColor = LyraColors.SurfaceHigher,
             )
-            Spacer(Modifier.width(5.dp))
+            Spacer(Modifier.width(6.dp))
         }
         DownloadState.QUEUED -> {
             Icon(Icons.Rounded.Download, "En cola", tint = LyraColors.TextTertiary, modifier = Modifier.size(13.dp))
-            Spacer(Modifier.width(4.dp))
+            Spacer(Modifier.width(5.dp))
         }
         else -> Unit
     }
@@ -283,12 +401,12 @@ fun DownloadIndicator(state: Int?, progress: Float?) {
 fun ExplicitBadge() {
     Box(
         Modifier
-            .padding(end = 5.dp)
-            .clip(RoundedCornerShape(2.dp))
-            .background(LyraColors.TextSecondary)
-            .padding(horizontal = 4.dp, vertical = 0.dp),
+            .padding(end = 6.dp)
+            .clip(RoundedCornerShape(3.dp))
+            .background(LyraColors.SurfaceHigher)
+            .padding(horizontal = 4.dp),
     ) {
-        Text("E", color = Color.Black, fontSize = 10.sp, fontWeight = FontWeight.Black)
+        Text("E", color = LyraColors.TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
     }
 }
 
@@ -296,20 +414,20 @@ fun ExplicitBadge() {
 fun SourceBadge(text: String) {
     Box(
         Modifier
-            .padding(end = 5.dp)
-            .clip(RoundedCornerShape(2.dp))
-            .background(LyraColors.SurfaceHigher)
+            .padding(end = 6.dp)
+            .clip(RoundedCornerShape(3.dp))
+            .border(1.dp, LyraColors.Border, RoundedCornerShape(3.dp))
             .padding(horizontal = 4.dp),
     ) {
-        Text(text, color = LyraColors.TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+        Text(text, color = LyraColors.TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 
 fun subtitleOf(item: MusicItem): String = when (item) {
-    is Song -> listOfNotNull("Canción", item.artistsText.ifEmpty { null }).joinToString(" • ")
-    is AlbumItem -> listOfNotNull(item.kind ?: "Álbum", item.artistsText.ifEmpty { null }, item.year).joinToString(" • ")
+    is Song -> listOfNotNull("Canción", item.artistsText.ifEmpty { null }).joinToString(" · ")
+    is AlbumItem -> listOfNotNull(item.kind ?: "Álbum", item.artistsText.ifEmpty { null }, item.year).joinToString(" · ")
     is ArtistItem -> item.subtitle ?: "Artista"
-    is PlaylistItem -> listOfNotNull("Playlist", item.author, item.songCountText).joinToString(" • ")
+    is PlaylistItem -> listOfNotNull("Playlist", item.author, item.songCountText).joinToString(" · ")
     is RadioItem -> item.subtitle
 }
 
@@ -317,68 +435,81 @@ fun subtitleOf(item: MusicItem): String = when (item) {
 @UnstableApi
 @Composable
 fun ItemRow(item: MusicItem, modifier: Modifier = Modifier, subtitle: String = subtitleOf(item), onClick: (() -> Unit)? = null) {
+    val actions = LocalActions.current
     if (item is Song) {
-        val actions = LocalActions.current
         SongRow(item, onClick = { onClick?.invoke() ?: actions.open(item) }, modifier = modifier)
         return
     }
-    val actions = LocalActions.current
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .combinedClickableCompat { onClick?.invoke() ?: actions.open(item) }
-            .padding(horizontal = 16.dp, vertical = 7.dp),
+            .pressable(pressedScale = 0.985f) { onClick?.invoke() ?: actions.open(item) }
+            .padding(horizontal = 20.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ItemArtwork(item, Modifier.size(56.dp))
-        Spacer(Modifier.width(12.dp))
+        ItemArtwork(item, Modifier.size(56.dp), RoundedCornerShape(10.dp))
+        Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
-            Text(item.title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = LyraColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(item.title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = LyraColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
 
-fun Modifier.combinedClickableCompat(onClick: () -> Unit): Modifier = this.clickable(onClick = onClick)
-
 // ------------------------------------------------------------------ tarjetas
 
+private fun MusicItem.isPlayable() = this is RadioItem || this is AlbumItem || this is PlaylistItem || this is Song
+
+/** Tarjeta de carrusel: portada grande de 16 px con botón de play hueso encima. */
 @UnstableApi
 @Composable
-fun ItemCard(item: MusicItem, modifier: Modifier = Modifier, width: Dp = 150.dp) {
+fun ItemCard(item: MusicItem, modifier: Modifier = Modifier, width: Dp = 156.dp) {
     val actions = LocalActions.current
     Column(
         modifier = modifier
             .width(width)
-            .clip(RoundedCornerShape(6.dp))
-            .combinedClickableCompat { actions.open(item) }
-            .padding(bottom = 4.dp),
+            .pressable { actions.open(item) },
     ) {
-        val artModifier = Modifier
-            .fillMaxWidth()
-            .aspectRatio(if (item is Song && item.isVideo) 16f / 9f else 1f)
-        if (item is Song) Artwork(artworkFor(item), artModifier) else ItemArtwork(item, artModifier)
-        Spacer(Modifier.height(8.dp))
+        val isVideo = item is Song && item.isVideo && item.album == null
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .aspectRatio(if (isVideo) 16f / 10f else 1f),
+        ) {
+            if (item is Song) Artwork(artworkFor(item), Modifier.fillMaxSize(), RoundedCornerShape(16.dp))
+            else ItemArtwork(item, Modifier.fillMaxSize(), RoundedCornerShape(16.dp))
+            if (item.isPlayable()) {
+                PlayCircleButton(
+                    onClick = { actions.playItem(item) },
+                    size = if (width >= 170.dp) 46.dp else 40.dp,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(10.dp),
+                )
+            }
+        }
+        Spacer(Modifier.height(10.dp))
         if (item !is RadioItem) {
             Text(
                 item.title,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Bold,
-                maxLines = 2,
+                style = MaterialTheme.typography.titleSmall,
+                maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+        } else {
+            Text(item.subtitle.substringBefore(",").ifEmpty { item.title }, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         Text(
             if (item is RadioItem) item.subtitle else subtitleOf(item),
             style = MaterialTheme.typography.bodySmall,
             color = LyraColors.TextSecondary,
-            maxLines = 2,
+            maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
     }
 }
 
-/** Acceso rápido del Inicio (rejilla de 2 columnas, como en Spotify). */
+/** Acceso rápido del Inicio (rejilla de 2 columnas). */
 @UnstableApi
 @Composable
 fun QuickTile(item: MusicItem, modifier: Modifier = Modifier) {
@@ -386,19 +517,19 @@ fun QuickTile(item: MusicItem, modifier: Modifier = Modifier) {
     Row(
         modifier = modifier
             .height(56.dp)
-            .clip(RoundedCornerShape(6.dp))
-            .background(LyraColors.SurfaceHigher)
-            .combinedClickableCompat { actions.open(item) },
+            .clip(RoundedCornerShape(12.dp))
+            .background(LyraColors.SurfaceHigh)
+            .pressable { actions.open(item) },
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (item is Song) Artwork(artworkFor(item), Modifier.size(56.dp), RoundedCornerShape(0.dp))
-        else ItemArtwork(item, Modifier.size(56.dp))
+        if (item is Song) Artwork(artworkFor(item), Modifier.size(56.dp), RoundedCornerShape(12.dp))
+        else ItemArtwork(item, Modifier.size(56.dp), RoundedCornerShape(12.dp))
         Text(
-            if (item is RadioItem) "${item.title} · ${item.subtitle}" else item.title,
+            if (item is RadioItem) item.subtitle.substringBefore(",") else item.title,
             modifier = Modifier
                 .weight(1f)
-                .padding(horizontal = 10.dp),
-            style = MaterialTheme.typography.labelLarge,
+                .padding(horizontal = 12.dp),
+            style = MaterialTheme.typography.titleSmall,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
@@ -408,28 +539,28 @@ fun QuickTile(item: MusicItem, modifier: Modifier = Modifier) {
 // ------------------------------------------------------------------ secciones
 
 @Composable
-fun SectionHeader(title: String, subtitle: String? = null, onMore: (() -> Unit)? = null) {
+fun SectionHeader(title: String, subtitle: String? = null, onMore: (() -> Unit)? = null, moreLabel: String = "Ver todo") {
     Row(
         Modifier
             .fillMaxWidth()
-            .padding(start = 16.dp, end = 8.dp, top = 22.dp, bottom = 10.dp),
+            .padding(start = 20.dp, end = 12.dp, top = 30.dp, bottom = 14.dp),
         verticalAlignment = Alignment.Bottom,
     ) {
         Column(Modifier.weight(1f)) {
-            if (subtitle != null) {
-                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = LyraColors.TextSecondary)
-            }
             Text(title, style = MaterialTheme.typography.headlineSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            if (subtitle != null) {
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = LyraColors.TextSecondary, modifier = Modifier.padding(top = 2.dp))
+            }
         }
         if (onMore != null) {
             Text(
-                "Mostrar todo",
+                moreLabel,
                 style = MaterialTheme.typography.labelMedium,
                 color = LyraColors.TextSecondary,
                 modifier = Modifier
                     .clip(RoundedCornerShape(12.dp))
-                    .combinedClickableCompat(onMore)
-                    .padding(8.dp),
+                    .clickable(onClick = onMore)
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
             )
         }
     }
@@ -439,65 +570,86 @@ fun SectionHeader(title: String, subtitle: String? = null, onMore: (() -> Unit)?
 @Composable
 fun SectionView(section: Section, onMore: (() -> Unit)? = null) {
     val actions = LocalActions.current
+    val songs = section.items.filterIsInstance<Song>()
+    val isSongList = section.style != SectionStyle.CAROUSEL && songs.isNotEmpty() && songs.size == section.items.size
+    if (isSongList) {
+        // Lista vertical, como "En tendencia" en la web.
+        var expanded by rememberSaveable(section.title) { mutableStateOf(false) }
+        val canExpand = songs.size > 5
+        SectionHeader(
+            section.title,
+            section.subtitle,
+            onMore = when {
+                canExpand -> ({ expanded = !expanded })
+                else -> onMore
+            },
+            moreLabel = if (canExpand) (if (expanded) "Ver menos" else "Ver todo") else "Ver todo",
+        )
+        Column(Modifier.animateContentSize(spring(stiffness = Spring.StiffnessMediumLow))) {
+            (if (expanded) songs else songs.take(5)).forEachIndexed { index, song ->
+                SongRow(song, onClick = { actions.play(songs, index, fromLabel = section.title) })
+            }
+        }
+        return
+    }
     SectionHeader(section.title, section.subtitle, onMore)
-    when (section.style) {
-        SectionStyle.SONG_GRID -> {
-            val songs = section.items.filterIsInstance<Song>()
-            val rows = minOf(4, songs.size.coerceAtLeast(1))
-            LazyHorizontalGrid(
-                rows = GridCells.Fixed(rows),
-                modifier = Modifier.height((rows * 64).dp),
-                contentPadding = PaddingValues(end = 16.dp),
-            ) {
-                items(songs, key = { it.id }) { song ->
-                    SongRow(
-                        song,
-                        onClick = { actions.play(songs, songs.indexOf(song), fromLabel = section.title) },
-                        modifier = Modifier.width(310.dp),
-                    )
-                }
-            }
-        }
-        SectionStyle.LIST -> Column {
-            section.items.take(5).forEach { item ->
-                if (item is Song) {
-                    val songs = section.items.filterIsInstance<Song>()
-                    SongRow(item, onClick = { actions.play(songs, songs.indexOf(item), fromLabel = section.title) })
-                } else {
-                    ItemRow(item)
-                }
-            }
-        }
-        SectionStyle.CAROUSEL -> LazyRow(
-            contentPadding = PaddingValues(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            items(section.items, key = { it.id }) { item ->
-                ItemCard(item, width = if (item is Song && item.isVideo) 240.dp else 150.dp)
-            }
+    if (section.style == SectionStyle.LIST) {
+        Column { section.items.take(5).forEach { ItemRow(it) } }
+        return
+    }
+    val big = section.items.all { it is RadioItem }
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 20.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        items(section.items, key = { it.id }) { item ->
+            val isVideo = item is Song && item.isVideo && item.album == null
+            ItemCard(item, width = when {
+                big -> 176.dp
+                isVideo -> 250.dp
+                else -> 156.dp
+            })
         }
     }
 }
 
-// ------------------------------------------------------------------ botones
+// ------------------------------------------------------------------ botones de reproducción
 
+/** Botón circular color hueso con el play oscuro. */
 @Composable
-fun PlayCircleButton(onClick: () -> Unit, modifier: Modifier = Modifier, size: Dp = 56.dp) {
+fun PlayCircleButton(onClick: () -> Unit, modifier: Modifier = Modifier, size: Dp = 56.dp, icon: ImageVector = Icons.Rounded.PlayArrow) {
     Box(
         modifier = modifier
             .size(size)
+            .shadow(10.dp, CircleShape, ambientColor = Color.Black, spotColor = Color.Black)
             .clip(CircleShape)
-            .background(Color.White)
-            .combinedClickableCompat(onClick),
+            .background(LyraColors.Accent)
+            .pressable(pressedScale = 0.92f, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(Icons.Rounded.PlayArrow, "Reproducir", tint = Color.Black, modifier = Modifier.size(size * 0.6f))
+        Icon(icon, "Reproducir", tint = LyraColors.OnAccent, modifier = Modifier.size(size * 0.56f))
     }
 }
 
 @Composable
 fun ShuffleIconButton(onClick: () -> Unit) {
     IconButton(onClick = onClick) {
-        Icon(Icons.Rounded.Shuffle, "Aleatorio", tint = LyraColors.TextSecondary, modifier = Modifier.size(28.dp))
+        Icon(Icons.Rounded.Shuffle, "Aleatorio", tint = LyraColors.TextSecondary, modifier = Modifier.size(26.dp))
+    }
+}
+
+/** Icono redondo con borde fino (acciones secundarias de las cabeceras). */
+@Composable
+fun OutlineIconButton(icon: ImageVector, description: String, onClick: () -> Unit, tint: Color = LyraColors.TextPrimary) {
+    Box(
+        Modifier
+            .padding(end = 10.dp)
+            .size(40.dp)
+            .clip(CircleShape)
+            .border(BorderStroke(1.dp, LyraColors.Border), CircleShape)
+            .pressable(pressedScale = 0.9f, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, description, tint = tint, modifier = Modifier.size(20.dp))
     }
 }

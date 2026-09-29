@@ -66,3 +66,5 @@ app/src/main/java/com/lyra/music/
 ## Licencia
 
 GPL-3.0, porque usa [NewPipeExtractor](https://github.com/TeamNewPipe/NewPipeExtractor) (GPL-3.0). Las letras vienen de [LRCLIB](https://lrclib.net) y no se incluyen en el código.
+
+Tipografías incluidas: [Instrument Serif](https://github.com/Instrument/instrument-serif) y [Outfit](https://github.com/Outfitio/Outfit-Fonts), ambas con licencia SIL Open Font License 1.1 (textos en `licenses/`).

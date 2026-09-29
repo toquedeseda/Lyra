@@ -76,7 +76,7 @@ fun SongMenuSheet(request: SongMenuRequest, onDismiss: () -> Unit) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = LyraColors.SurfaceHigh,
+        containerColor = LyraColors.Surface,
     ) {
         Column(
             Modifier
@@ -157,7 +157,7 @@ fun AddToPlaylistSheet(songs: List<Song>, onDismiss: () -> Unit) {
     val playlists by actions.container.library.playlistSummaries.collectAsState(initial = emptyList())
     var creating by remember { mutableStateOf(false) }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = LyraColors.SurfaceHigh) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = LyraColors.Surface) {
         Text(
             "Añadir a playlist",
             style = MaterialTheme.typography.titleLarge,
@@ -218,8 +218,8 @@ fun TextInputDialog(
     var text by remember { mutableStateOf(initial) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = LyraColors.SurfaceHigh,
-        title = { Text(title) },
+        containerColor = LyraColors.Surface,
+        title = { Text(title, style = MaterialTheme.typography.headlineMedium) },
         text = {
             OutlinedTextField(
                 value = text,
@@ -227,14 +227,15 @@ fun TextInputDialog(
                 singleLine = true,
                 placeholder = { Text(placeholder) },
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Color.White,
-                    cursorColor = Color.White,
-                    focusedTextColor = Color.White,
+                    focusedBorderColor = LyraColors.Accent,
+                    unfocusedBorderColor = LyraColors.Border,
+                    cursorColor = LyraColors.Accent,
+                    focusedTextColor = LyraColors.TextPrimary,
                 ),
             )
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(text.trim()) }, enabled = text.isNotBlank()) { Text(confirm, color = Color.White) }
+            TextButton(onClick = { onConfirm(text.trim()) }, enabled = text.isNotBlank()) { Text(confirm, color = LyraColors.Accent, style = MaterialTheme.typography.labelLarge) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar", color = LyraColors.TextSecondary) } },
     )
@@ -244,10 +245,10 @@ fun TextInputDialog(
 fun ConfirmDialog(title: String, message: String, confirm: String, onDismiss: () -> Unit, onConfirm: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = LyraColors.SurfaceHigh,
-        title = { Text(title) },
+        containerColor = LyraColors.Surface,
+        title = { Text(title, style = MaterialTheme.typography.headlineMedium) },
         text = { Text(message, color = LyraColors.TextSecondary) },
-        confirmButton = { TextButton(onClick = { onDismiss(); onConfirm() }) { Text(confirm, color = Color.White) } },
+        confirmButton = { TextButton(onClick = { onDismiss(); onConfirm() }) { Text(confirm, color = LyraColors.Accent, style = MaterialTheme.typography.labelLarge) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar", color = LyraColors.TextSecondary) } },
     )
 }
@@ -256,24 +257,29 @@ fun ConfirmDialog(title: String, message: String, confirm: String, onDismiss: ()
 fun ChipRow(labels: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
     androidx.compose.foundation.lazy.LazyRow(
         modifier = modifier,
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 20.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        items(labels.size) { index ->
-            val isSelected = index == selected
-            androidx.compose.foundation.layout.Box(
-                Modifier
-                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(50))
-                    .background(if (isSelected) Color.White else LyraColors.SurfaceHigher)
-                    .clickable { onSelect(index) }
-                    .padding(horizontal = 14.dp, vertical = 7.dp),
-            ) {
-                Text(
-                    labels[index],
-                    color = if (isSelected) Color.Black else Color.White,
-                    style = MaterialTheme.typography.labelLarge,
-                )
-            }
-        }
+        items(labels.size) { index -> Pill(labels[index], index == selected) { onSelect(index) } }
+    }
+}
+
+/** Pastilla: oscura con texto gris, o color hueso cuando está elegida. */
+@Composable
+fun Pill(label: String, selected: Boolean = false, onClick: () -> Unit) {
+    androidx.compose.foundation.layout.Box(
+        Modifier
+            .height(36.dp)
+            .clip(androidx.compose.foundation.shape.RoundedCornerShape(50))
+            .background(if (selected) LyraColors.Accent else LyraColors.SurfaceHigh)
+            .pressable(pressedScale = 0.94f, onClick = onClick)
+            .padding(horizontal = 16.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            label,
+            color = if (selected) LyraColors.OnAccent else LyraColors.TextSecondary,
+            style = MaterialTheme.typography.labelLarge,
+        )
     }
 }

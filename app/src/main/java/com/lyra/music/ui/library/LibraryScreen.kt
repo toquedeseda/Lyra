@@ -1,6 +1,8 @@
 package com.lyra.music.ui.library
 
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -13,14 +15,11 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.Favorite
-import androidx.compose.material.icons.rounded.LibraryMusic
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -33,18 +32,23 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.util.UnstableApi
-import com.lyra.music.data.model.PlaylistItem
+import com.lyra.music.data.db.DownloadState
 import com.lyra.music.ui.LocalActions
 import com.lyra.music.ui.components.ChipRow
-import com.lyra.music.ui.components.EmptyView
+import com.lyra.music.ui.components.GhostPillButton
+import com.lyra.music.ui.components.InfoCard
 import com.lyra.music.ui.components.ItemRow
 import com.lyra.music.ui.components.Mosaic
+import com.lyra.music.ui.components.PillButton
+import com.lyra.music.ui.components.SectionHeader
 import com.lyra.music.ui.components.SpecialCover
 import com.lyra.music.ui.components.TextInputDialog
+import com.lyra.music.ui.components.pressable
 import com.lyra.music.ui.navigation.DownloadsRoute
 import com.lyra.music.ui.navigation.LikedRoute
 import com.lyra.music.ui.navigation.LocalPlaylistRoute
@@ -60,79 +64,112 @@ fun LibraryScreen(contentPadding: PaddingValues) {
     val artists by library.followedArtists.collectAsState(initial = emptyList())
     val liked by library.likedIds.collectAsState()
     val downloads by actions.container.downloads.states.collectAsState()
-    val completedDownloads = downloads.values.count { it.state == com.lyra.music.data.db.DownloadState.COMPLETED }
+    val completedDownloads = downloads.values.count { it.state == DownloadState.COMPLETED }
 
     var filter by rememberSaveable { mutableIntStateOf(0) }
     var creating by remember { mutableStateOf(false) }
     val filters = listOf("Todo", "Playlists", "Álbumes", "Artistas")
+    val showPlaylists = filter == 0 || filter == 1
 
-    Column(Modifier.fillMaxSize()) {
-        Row(
-            Modifier
-                .statusBarsPadding()
-                .padding(start = 16.dp, end = 4.dp, top = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text("Tu biblioteca", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
-            IconButton(onClick = { creating = true }) { Icon(Icons.Rounded.Add, "Crear playlist", modifier = Modifier.size(28.dp)) }
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding() + 24.dp),
+    ) {
+        item {
+            Row(
+                Modifier
+                    .statusBarsPadding()
+                    .padding(start = 20.dp, end = 20.dp, top = 22.dp),
+                verticalAlignment = Alignment.Top,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("Tu biblioteca", style = MaterialTheme.typography.displayMedium)
+                    Text(
+                        "Favoritas, descargas y tus listas.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = LyraColors.TextSecondary,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
+                GhostPillButton("Nueva", onClick = { creating = true }, icon = Icons.Rounded.Add, modifier = Modifier.padding(top = 10.dp))
+            }
         }
-        ChipRow(filters, filter, { filter = it }, Modifier.padding(vertical = 12.dp))
+        item {
+            Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                PinnedCard(Icons.Rounded.Favorite, true, "Canciones que te gustan", "${liked.size} temas") {
+                    actions.nav.navigate(LikedRoute)
+                }
+                PinnedCard(Icons.Rounded.ArrowDownward, false, "Descargas", "$completedDownloads temas sin conexión") {
+                    actions.nav.navigate(DownloadsRoute)
+                }
+            }
+        }
+        item { ChipRow(filters, filter, { filter = it }, Modifier.padding(top = 22.dp)) }
 
-        LazyColumn(contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding() + 16.dp)) {
-            if (filter == 0 || filter == 1) {
+        if (showPlaylists) {
+            item { SectionHeader("Tus listas") }
+            if (playlists.isEmpty()) {
                 item {
-                    PinnedRow(Icons.Rounded.Favorite, "Canciones que te gustan", "Playlist • ${liked.size} canciones") {
-                        actions.nav.navigate(LikedRoute)
-                    }
-                }
-                item {
-                    PinnedRow(Icons.Rounded.ArrowDownward, "Descargas", "$completedDownloads canciones sin conexión") {
-                        actions.nav.navigate(DownloadsRoute)
-                    }
-                }
-                items(playlists, key = { "p${it.id}" }) { playlist ->
-                    val covers by library.playlistCovers(playlist.id).collectAsState(initial = emptyList())
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .clickable { actions.nav.navigate(LocalPlaylistRoute(playlist.id)) }
-                            .padding(horizontal = 16.dp, vertical = 7.dp),
-                        verticalAlignment = Alignment.CenterVertically,
+                    InfoCard(
+                        title = "Aún no tienes listas",
+                        text = "Crea una aquí, o guarda cualquier playlist de YouTube Music o SoundCloud con el botón + de su página.",
+                        modifier = Modifier.padding(horizontal = 20.dp),
                     ) {
-                        Mosaic(if (covers.size >= 4) covers else listOfNotNull(playlist.coverUrl ?: covers.firstOrNull()), Modifier.size(64.dp))
-                        Spacer(Modifier.width(12.dp))
-                        Column {
-                            Text(playlist.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
-                            Text(
-                                "Playlist • ${playlist.songCount} canciones" + if (playlist.remoteId != null) " • Importada" else "",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = LyraColors.TextSecondary,
-                            )
-                        }
+                        PillButton("Nueva playlist", onClick = { creating = true })
                     }
                 }
             }
-            if (filter == 0 || filter == 2) {
-                items(albums, key = { "a${it.id}" }) { album -> ItemRow(album) }
+            items(playlists, key = { "p${it.id}" }) { playlist ->
+                val covers by library.playlistCovers(playlist.id).collectAsState(initial = emptyList())
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .pressable(pressedScale = 0.985f) { actions.nav.navigate(LocalPlaylistRoute(playlist.id)) }
+                        .padding(horizontal = 20.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Mosaic(
+                        if (covers.size >= 4) covers else listOfNotNull(playlist.coverUrl ?: covers.firstOrNull()),
+                        Modifier.size(56.dp),
+                        RoundedCornerShape(10.dp),
+                    )
+                    Spacer(Modifier.width(14.dp))
+                    Column {
+                        Text(playlist.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            "Playlist · ${playlist.songCount} temas" + if (playlist.remoteId != null) " · Importada" else "",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = LyraColors.TextSecondary,
+                        )
+                    }
+                }
             }
-            if (filter == 0 || filter == 3) {
-                items(artists, key = { "r${it.id}" }) { artist -> ItemRow(artist) }
-            }
-            val empty = when (filter) {
-                1 -> false
-                2 -> albums.isEmpty()
-                3 -> artists.isEmpty()
-                else -> false
-            }
-            if (empty) {
+        }
+        if ((filter == 0 && albums.isNotEmpty()) || filter == 2) {
+            item { SectionHeader("Álbumes") }
+            if (albums.isEmpty()) {
                 item {
-                    EmptyView(
-                        Icons.Rounded.LibraryMusic,
-                        if (filter == 2) "Sin álbumes guardados" else "No sigues a nadie",
-                        if (filter == 2) "Guarda álbumes con el botón + de su página." else "Pulsa «Seguir» en la página de un artista.",
+                    InfoCard(
+                        "Sin álbumes guardados",
+                        "Guarda un álbum con el botón + de su página y aparecerá aquí.",
+                        Modifier.padding(horizontal = 20.dp),
                     )
                 }
             }
+            items(albums, key = { "a${it.id}" }) { album -> ItemRow(album) }
+        }
+        if ((filter == 0 && artists.isNotEmpty()) || filter == 3) {
+            item { SectionHeader("Artistas") }
+            if (artists.isEmpty()) {
+                item {
+                    InfoCard(
+                        "No sigues a nadie todavía",
+                        "Pulsa «Seguir» en la página de un artista.",
+                        Modifier.padding(horizontal = 20.dp),
+                    )
+                }
+            }
+            items(artists, key = { "r${it.id}" }) { artist -> ItemRow(artist) }
         }
     }
 
@@ -154,26 +191,24 @@ fun LibraryScreen(contentPadding: PaddingValues) {
     }
 }
 
+/** Tarjeta fija de la biblioteca, como "Canciones que te gustan" en la web. */
 @Composable
-private fun PinnedRow(icon: ImageVector, title: String, subtitle: String, onClick: () -> Unit) {
+private fun PinnedCard(icon: ImageVector, filled: Boolean, title: String, subtitle: String, onClick: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 7.dp),
+            .clip(RoundedCornerShape(16.dp))
+            .background(LyraColors.SurfaceHigh)
+            .border(1.dp, LyraColors.Border, RoundedCornerShape(16.dp))
+            .pressable(onClick = onClick)
+            .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        SpecialCover(icon, Modifier.size(64.dp))
-        Spacer(Modifier.width(12.dp))
+        SpecialCover(icon, Modifier.size(64.dp), RoundedCornerShape(12.dp), filled = filled)
+        Spacer(Modifier.width(16.dp))
         Column {
-            Text(title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
-            Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = LyraColors.TextSecondary)
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = LyraColors.TextSecondary)
         }
     }
 }
-
-@Suppress("unused")
-private val placeholderShape = CircleShape
-
-@Suppress("unused")
-private fun PlaylistItem.isLocal() = id.startsWith("local:")

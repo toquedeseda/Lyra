@@ -5,25 +5,23 @@ import android.content.Intent
 import android.net.Uri
 import android.os.PowerManager
 import android.provider.Settings
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.BatteryAlert
-import androidx.compose.material.icons.rounded.History
-import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.outlined.BatteryAlert
+import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -44,8 +42,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.util.UnstableApi
@@ -54,12 +50,16 @@ import com.lyra.music.data.model.Section
 import com.lyra.music.ui.LocalActions
 import com.lyra.music.ui.components.ChipRow
 import com.lyra.music.ui.components.ErrorView
+import com.lyra.music.ui.components.Eyebrow
+import com.lyra.music.ui.components.InfoCard
 import com.lyra.music.ui.components.LoadingView
+import com.lyra.music.ui.components.PillButton
 import com.lyra.music.ui.components.QuickTile
 import com.lyra.music.ui.components.SectionView
 import com.lyra.music.ui.components.friendlyError
 import com.lyra.music.ui.navigation.BrowseRoute
 import com.lyra.music.ui.navigation.HistoryRoute
+import com.lyra.music.ui.navigation.PlaylistRoute
 import com.lyra.music.ui.navigation.SettingsRoute
 import com.lyra.music.ui.theme.LyraColors
 import kotlinx.coroutines.launch
@@ -73,6 +73,7 @@ fun HomeScreen(contentPadding: PaddingValues) {
     val container = actions.container
     val feed by container.home.feed.collectAsState()
     val settings by container.settings.flow.collectAsState()
+    val downloads by container.downloads.states.collectAsState()
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val listState = rememberLazyListState()
@@ -95,11 +96,21 @@ fun HomeScreen(contentPadding: PaddingValues) {
         }
     }
 
+    fun openMore(section: Section) {
+        val more = section.more ?: return
+        if (more.browseId.startsWith("VL")) actions.nav.navigate(PlaylistRoute("yt:" + more.browseId))
+        else actions.nav.navigate(BrowseRoute(more.browseId, more.params, section.title))
+    }
+
     // Carga más secciones al acercarse al final.
-    val nearEnd by remember { derivedStateOf { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0 >= listState.layoutInfo.totalItemsCount - 3 } }
+    val nearEnd by remember {
+        derivedStateOf { (listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0) >= listState.layoutInfo.totalItemsCount - 3 }
+    }
     LaunchedEffect(nearEnd, feed.canLoadMore) {
         if (nearEnd && feed.canLoadMore && selectedChip == 0) container.home.loadMore()
     }
+
+    val offline = downloads.values.count { it.state == com.lyra.music.data.db.DownloadState.COMPLETED }
 
     PullToRefreshBox(
         isRefreshing = refreshing,
@@ -114,25 +125,32 @@ fun HomeScreen(contentPadding: PaddingValues) {
     ) {
         LazyColumn(
             state = listState,
-            contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding() + 16.dp),
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    androidx.compose.ui.graphics.Brush.verticalGradient(
-                        0f to Color(0xFF262626), 0.25f to LyraColors.Background,
-                    ),
-                ),
+            contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding() + 24.dp),
+            modifier = Modifier.fillMaxSize(),
         ) {
             item {
-                Row(
+                Column(
                     Modifier
                         .statusBarsPadding()
-                        .padding(start = 16.dp, end = 4.dp, top = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                        .padding(start = 20.dp, end = 8.dp, top = 18.dp),
                 ) {
-                    Text(greeting(), style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
-                    IconButton(onClick = { actions.nav.navigate(HistoryRoute) }) { Icon(Icons.Rounded.History, "Historial") }
-                    IconButton(onClick = { actions.nav.navigate(SettingsRoute) }) { Icon(Icons.Rounded.Settings, "Ajustes") }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Eyebrow("Lyra", Modifier.weight(1f))
+                        IconButton(onClick = { actions.nav.navigate(HistoryRoute) }) {
+                            Icon(Icons.Outlined.History, "Historial", tint = LyraColors.TextSecondary)
+                        }
+                        IconButton(onClick = { actions.nav.navigate(SettingsRoute) }) {
+                            Icon(Icons.Outlined.Settings, "Ajustes", tint = LyraColors.TextSecondary)
+                        }
+                    }
+                    Text(greeting(), style = MaterialTheme.typography.displayMedium, modifier = Modifier.padding(end = 12.dp))
+                    Text(
+                        if (offline > 0) "Música sin anuncios. Tienes $offline canciones listas para escuchar sin conexión."
+                        else "Música sin anuncios de YouTube Music y SoundCloud, también sin conexión.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = LyraColors.TextSecondary,
+                        modifier = Modifier.padding(top = 10.dp, end = 12.dp),
+                    )
                 }
             }
             if (feed.chips.isNotEmpty()) {
@@ -141,14 +159,14 @@ fun HomeScreen(contentPadding: PaddingValues) {
                         labels = listOf("Todo") + feed.chips.map { it.title },
                         selected = selectedChip,
                         onSelect = { index -> selectChip(index, feed.chips.getOrNull(index - 1)) },
-                        modifier = Modifier.padding(vertical = 12.dp),
+                        modifier = Modifier.padding(top = 22.dp, bottom = 6.dp),
                     )
                 }
             }
             if (selectedChip == 0) {
                 if (feed.quickAccess.isNotEmpty()) {
                     item {
-                        Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             feed.quickAccess.chunked(2).forEach { pair ->
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     pair.forEach { QuickTile(it, Modifier.weight(1f)) }
@@ -159,16 +177,27 @@ fun HomeScreen(contentPadding: PaddingValues) {
                     }
                 }
                 if (!settings.batteryTipDismissed && !ignoresBatteryOptimizations(context)) {
-                    item { BatteryTip(onFix = { openBatterySettings(context) }, onDismiss = { scope.launch { container.settings.update { it.copy(batteryTipDismissed = true) } } }) }
+                    item {
+                        InfoCard(
+                            title = "Que no se corte la música",
+                            text = "Los Vivo cierran las apps en segundo plano. Quita la optimización de batería a Lyra para que la música y las descargas sigan con la pantalla apagada.",
+                            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 22.dp),
+                        ) {
+                            PillButton("Arreglarlo", onClick = { openBatterySettings(context) }, icon = Icons.Outlined.BatteryAlert)
+                            TextButton(onClick = { scope.launch { container.settings.update { it.copy(batteryTipDismissed = true) } } }) {
+                                Text("Ahora no", color = LyraColors.TextSecondary, style = MaterialTheme.typography.labelLarge)
+                            }
+                        }
+                    }
                 }
                 itemsIndexed(feed.sections, key = { index, section -> "$index-${section.title}" }) { _, section ->
-                    SectionView(section, onMore = section.more?.let { more -> { actions.nav.navigate(BrowseRoute(more.browseId, more.params, section.title)) } })
+                    SectionView(section, onMore = section.more?.let { { openMore(section) } })
                 }
                 if (feed.sections.isEmpty()) {
                     item {
                         when {
                             feed.error != null -> ErrorView(feed.error!!, onRetry = { scope.launch { container.home.refresh(force = true) } })
-                            else -> LoadingView(Modifier.height(300.dp))
+                            else -> LoadingView(Modifier.height(280.dp))
                         }
                     }
                 }
@@ -176,39 +205,12 @@ fun HomeScreen(contentPadding: PaddingValues) {
                 val sections = chipSections
                 when {
                     chipError != null -> item { ErrorView(chipError!!, onRetry = { selectChip(selectedChip, feed.chips.getOrNull(selectedChip - 1)) }) }
-                    sections == null -> item { LoadingView(Modifier.height(300.dp)) }
+                    sections == null -> item { LoadingView(Modifier.height(280.dp)) }
                     else -> itemsIndexed(sections, key = { index, s -> "chip$index-${s.title}" }) { _, section ->
-                        SectionView(section, onMore = section.more?.let { more -> { actions.nav.navigate(BrowseRoute(more.browseId, more.params, section.title)) } })
+                        SectionView(section, onMore = section.more?.let { { openMore(section) } })
                     }
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun BatteryTip(onFix: () -> Unit, onDismiss: () -> Unit) {
-    Column(
-        Modifier
-            .padding(16.dp)
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(LyraColors.SurfaceHigher)
-            .padding(16.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Rounded.BatteryAlert, null, tint = Color.White)
-            Text("  Que no se corte la música", style = MaterialTheme.typography.titleMedium)
-        }
-        Spacer(Modifier.height(6.dp))
-        Text(
-            "Los Vivo cierran las apps en segundo plano para ahorrar batería. Quita la optimización de batería a Lyra para que la música y las descargas no se paren con la pantalla apagada.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = LyraColors.TextSecondary,
-        )
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            TextButton(onClick = onDismiss) { Text("Ahora no", color = LyraColors.TextSecondary) }
-            TextButton(onClick = onFix) { Text("Arreglarlo", color = Color.White) }
         }
     }
 }
