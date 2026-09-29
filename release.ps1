@@ -11,12 +11,25 @@
 param(
     [Parameter(Mandatory = $true)][string]$Version,
     [string]$Notes = "",
-    [string]$NotesFile = ""
+    [string]$NotesFile = "",
+    # Línea opcional al final del mensaje del commit (p. ej. "Co-Authored-By: …").
+    [string]$CommitTrailer = ""
 )
 
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
 Set-Location $root
+
+# Ejecuta un programa externo y solo falla por su código de salida. En Windows
+# PowerShell 5.1 lo que escriben por stderr (Gradle, git) no debe cortar el script.
+function Invoke-Tool([string]$Exe, [string[]]$Arguments) {
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    & $Exe @Arguments 2>&1 | ForEach-Object { "$_" }
+    $code = $LASTEXITCODE
+    $ErrorActionPreference = $previous
+    if ($code -ne 0) { throw "Falló: $Exe $($Arguments -join ' ') (código $code)" }
+}
 
 if (-not $env:JAVA_HOME) {
     $env:JAVA_HOME = "C:\Program Files\Eclipse Adoptium\jdk-21.0.12.101-hotspot"
@@ -40,14 +53,20 @@ if ([version]$Version -le [version]$current) {
     throw "La versión $Version no es mayor que la actual ($current)"
 }
 $newCode = [int]$codeMatch.Groups[1].Value + 1
+$originalGradle = $gradle
 $gradle = $gradle -replace 'val lyraVersionCode = \d+', "val lyraVersionCode = $newCode"
 $gradle = $gradle -replace 'val lyraVersionName = "[^"]+"', "val lyraVersionName = `"$Version`""
 [IO.File]::WriteAllText($gradleFile, $gradle, (New-Object System.Text.UTF8Encoding $false))
 Write-Host "Versión $current -> $Version (código $newCode)" -ForegroundColor Cyan
 
 # --- 2. Tests y compilación ----------------------------------------------------
-& "$root\gradlew.bat" :app:testDebugUnitTest :app:assembleRelease --console=plain
-if ($LASTEXITCODE -ne 0) { throw "La compilación o los tests han fallado" }
+try {
+    Invoke-Tool "$root\gradlew.bat" @(":app:testDebugUnitTest", ":app:assembleRelease", "--console=plain")
+} catch {
+    # Si algo falla, la versión vuelve a como estaba.
+    [IO.File]::WriteAllText($gradleFile, $originalGradle, (New-Object System.Text.UTF8Encoding $false))
+    throw "La compilación o los tests han fallado; versión restaurada a $current. $_"
+}
 
 New-Item -ItemType Directory -Force "$root\dist" | Out-Null
 $apk = "$root\dist\Lyra-v$Version.apk"
@@ -65,11 +84,14 @@ if ($NotesFile) {
 }
 
 # --- 4. Git y GitHub -----------------------------------------------------------
-git add -A
-git commit -m "Lyra $Version"
-git tag "v$Version"
-git push origin HEAD --tags
-gh release create "v$Version" $apk --title "Lyra $Version" --notes-file $notesPath
-if ($LASTEXITCODE -ne 0) { throw "No se pudo crear la release en GitHub" }
+Invoke-Tool "git" @("add", "-A")
+if ($CommitTrailer) {
+    Invoke-Tool "git" @("commit", "-q", "-m", "Lyra $Version", "-m", $CommitTrailer)
+} else {
+    Invoke-Tool "git" @("commit", "-q", "-m", "Lyra $Version")
+}
+Invoke-Tool "git" @("tag", "v$Version")
+Invoke-Tool "git" @("push", "-q", "origin", "HEAD", "--tags")
+Invoke-Tool "gh" @("release", "create", "v$Version", $apk, "--title", "Lyra $Version", "--notes-file", $notesPath)
 
 Write-Host "Publicada Lyra $Version. El móvil la verá al abrir la app (o en Ajustes -> Buscar actualizaciones)." -ForegroundColor Green

@@ -1,4 +1,4 @@
-﻿import java.util.Properties
+import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
@@ -8,8 +8,8 @@ plugins {
 }
 
 // La versiÃ³n la cambia el script release.ps1: no tocar el formato de estas dos lÃ­neas.
-val lyraVersionCode = 1
-val lyraVersionName = "1.0.0"
+val lyraVersionCode = 2
+val lyraVersionName = "1.0.1"
 
 // Datos de firma de las releases (fuera del repositorio, ver README).
 val keystoreProps = Properties().apply {

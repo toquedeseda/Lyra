@@ -35,12 +35,13 @@ data class UpdateInfo(
 sealed interface UpdateState {
     data object Idle : UpdateState
     data object Checking : UpdateState
-    data object UpToDate : UpdateState
+    /** [manual]: la pidió el usuario desde Ajustes (solo entonces se avisa). */
+    data class UpToDate(val manual: Boolean) : UpdateState
     data class Available(val info: UpdateInfo) : UpdateState
     data class Downloading(val info: UpdateInfo, val progress: Float) : UpdateState
     data class Installing(val info: UpdateInfo) : UpdateState
     data class NeedsPermission(val info: UpdateInfo) : UpdateState
-    data class Failed(val reason: String, val info: UpdateInfo? = null) : UpdateState
+    data class Failed(val reason: String, val info: UpdateInfo? = null, val manual: Boolean = false) : UpdateState
 }
 
 /** Compara versiones tipo 1.2.10 (numéricamente, tramo a tramo). */
@@ -111,10 +112,10 @@ class UpdateRepository(
                     UpdateState.Available(info)
                 } else {
                     forget()
-                    UpdateState.UpToDate
+                    UpdateState.UpToDate(manual = force)
                 }
             } catch (e: Exception) {
-                UpdateState.Failed(e.message ?: "No se pudo comprobar")
+                UpdateState.Failed(e.message ?: "No se pudo comprobar", manual = force)
             }
         }
     }
@@ -222,7 +223,8 @@ class UpdateRepository(
         }
     }
 
-    private fun fetch(url: String): Release {
+    // En un hilo de red: Android no deja hacer peticiones desde el hilo principal.
+    private suspend fun fetch(url: String): Release = withContext(Dispatchers.IO) {
         val request = Request.Builder().url(url)
             .header("Accept", "application/vnd.github+json")
             .header("User-Agent", "Lyra-Updater")
@@ -234,7 +236,7 @@ class UpdateRepository(
                 404 -> throw IOException("Todavía no hay versiones publicadas")
                 else -> throw IOException("GitHub respondió ${response.code}")
             }
-            return json.decodeFromString(Release.serializer(), response.body.string())
+            json.decodeFromString(Release.serializer(), response.body.string())
         }
     }
 

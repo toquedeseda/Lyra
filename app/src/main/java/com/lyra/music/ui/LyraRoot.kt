@@ -203,8 +203,13 @@ fun LyraRoot(container: AppContainer) {
             when (val state = updateState) {
                 is UpdateState.Available, is UpdateState.Downloading, is UpdateState.Installing,
                 is UpdateState.NeedsPermission, is UpdateState.Failed -> {
-                    // Un fallo al comprobar en segundo plano no molesta; solo los de una actualización en curso.
-                    if (state !is UpdateState.Failed || state.info != null) {
+                    if (state is UpdateState.Failed && state.info == null) {
+                        // Fallo al comprobar: solo se avisa si lo pidió el usuario.
+                        LaunchedEffect(state) {
+                            if (state.manual) actions.message("No se pudo comprobar: ${state.reason}")
+                            container.updates.dismiss()
+                        }
+                    } else {
                         UpdateDialog(
                             state = state,
                             currentVersion = container.updates.currentVersion,
@@ -214,8 +219,8 @@ fun LyraRoot(container: AppContainer) {
                         )
                     }
                 }
-                UpdateState.UpToDate -> LaunchedEffect(state) {
-                    actions.message("Tienes la última versión")
+                is UpdateState.UpToDate -> LaunchedEffect(state) {
+                    if (state.manual) actions.message("Tienes la última versión")
                     container.updates.dismiss()
                 }
                 else -> Unit
