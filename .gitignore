@@ -1,0 +1,20 @@
+.gradle/
+.kotlin/
+build/
+app/build/
+local.properties
+.idea/
+*.iml
+.DS_Store
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Firma de las releases: nunca al repositorio
+keystore.properties
+signing/
+*.jks
+*.keystore
+
+# APKs generados por el script de publicación
+dist/

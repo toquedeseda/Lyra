@@ -1,0 +1,75 @@
+<#
+.SYNOPSIS
+  Publica una versión nueva de Lyra en GitHub. El móvil la detecta sola al abrir la app.
+
+.EXAMPLE
+  .\release.ps1 -Version 1.0.1 -Notes "- Arreglado el crossfade`n- Letras más rápidas"
+
+.EXAMPLE
+  .\release.ps1 -Version 1.1.0 -NotesFile notas.md
+#>
+param(
+    [Parameter(Mandatory = $true)][string]$Version,
+    [string]$Notes = "",
+    [string]$NotesFile = ""
+)
+
+$ErrorActionPreference = "Stop"
+$root = $PSScriptRoot
+Set-Location $root
+
+if (-not $env:JAVA_HOME) {
+    $env:JAVA_HOME = "C:\Program Files\Eclipse Adoptium\jdk-21.0.12.101-hotspot"
+}
+
+if ($Version -notmatch '^\d+\.\d+\.\d+$') {
+    throw "La versión debe tener el formato 1.2.3"
+}
+if (-not (Test-Path "$root\keystore.properties")) {
+    throw "Falta keystore.properties (la clave de firma). Sin ella el móvil no aceptará la actualización."
+}
+
+# --- 1. Subir versionCode y versionName ---------------------------------------
+$gradleFile = "$root\app\build.gradle.kts"
+$gradle = Get-Content $gradleFile -Raw -Encoding utf8
+$codeMatch = [regex]::Match($gradle, 'val lyraVersionCode = (\d+)')
+$nameMatch = [regex]::Match($gradle, 'val lyraVersionName = "([^"]+)"')
+if (-not $codeMatch.Success -or -not $nameMatch.Success) { throw "No encuentro la versión en app/build.gradle.kts" }
+$current = $nameMatch.Groups[1].Value
+if ([version]$Version -le [version]$current) {
+    throw "La versión $Version no es mayor que la actual ($current)"
+}
+$newCode = [int]$codeMatch.Groups[1].Value + 1
+$gradle = $gradle -replace 'val lyraVersionCode = \d+', "val lyraVersionCode = $newCode"
+$gradle = $gradle -replace 'val lyraVersionName = "[^"]+"', "val lyraVersionName = `"$Version`""
+[IO.File]::WriteAllText($gradleFile, $gradle, (New-Object System.Text.UTF8Encoding $false))
+Write-Host "Versión $current -> $Version (código $newCode)" -ForegroundColor Cyan
+
+# --- 2. Tests y compilación ----------------------------------------------------
+& "$root\gradlew.bat" :app:testDebugUnitTest :app:assembleRelease --console=plain
+if ($LASTEXITCODE -ne 0) { throw "La compilación o los tests han fallado" }
+
+New-Item -ItemType Directory -Force "$root\dist" | Out-Null
+$apk = "$root\dist\Lyra-v$Version.apk"
+Copy-Item "$root\app\build\outputs\apk\release\app-release.apk" $apk -Force
+Write-Host "APK: $apk" -ForegroundColor Cyan
+
+# --- 3. Notas -------------------------------------------------------------------
+$notesPath = "$root\dist\notas-v$Version.md"
+if ($NotesFile) {
+    Copy-Item $NotesFile $notesPath -Force
+} elseif ($Notes) {
+    [IO.File]::WriteAllText($notesPath, $Notes, (New-Object System.Text.UTF8Encoding $false))
+} else {
+    [IO.File]::WriteAllText($notesPath, "Mejoras y correcciones.", (New-Object System.Text.UTF8Encoding $false))
+}
+
+# --- 4. Git y GitHub -----------------------------------------------------------
+git add -A
+git commit -m "Lyra $Version"
+git tag "v$Version"
+git push origin HEAD --tags
+gh release create "v$Version" $apk --title "Lyra $Version" --notes-file $notesPath
+if ($LASTEXITCODE -ne 0) { throw "No se pudo crear la release en GitHub" }
+
+Write-Host "Publicada Lyra $Version. El móvil la verá al abrir la app (o en Ajustes -> Buscar actualizaciones)." -ForegroundColor Green

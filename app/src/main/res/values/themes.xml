@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Lyra" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/lyra_black</item>
+        <item name="android:colorBackground">@color/lyra_black</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+
+    <style name="Theme.Lyra.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/lyra_black</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="postSplashScreenTheme">@style/Theme.Lyra</item>
+    </style>
+</resources>
