@@ -180,8 +180,7 @@ fun AddToPlaylistSheet(songs: List<Song>, onDismiss: () -> Unit) {
                         .padding(horizontal = 20.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    val covers by actions.container.library.playlistCovers(playlist.id).collectAsState(initial = emptyList())
-                    Mosaic(covers, Modifier.size(48.dp))
+                    com.lyra.music.ui.library.PlaylistCover(playlist, Modifier.size(48.dp), androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
                     Spacer(Modifier.width(14.dp))
                     Column {
                         Text(playlist.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)

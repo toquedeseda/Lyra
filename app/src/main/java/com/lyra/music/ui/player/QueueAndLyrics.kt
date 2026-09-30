@@ -22,6 +22,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.DragHandle
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -55,6 +57,7 @@ import androidx.media3.common.util.UnstableApi
 import com.lyra.music.data.model.Song
 import com.lyra.music.data.source.lyrics.Lyrics
 import com.lyra.music.ui.LocalActions
+import com.lyra.music.ui.SongMenuRequest
 import com.lyra.music.ui.components.SongRow
 import com.lyra.music.ui.components.rememberReorderState
 import com.lyra.music.ui.components.reorderHandle
@@ -107,12 +110,36 @@ fun QueueSheet(onDismiss: () -> Unit) {
                     Column(Modifier.weight(1f)) {
                         Text("A continuación", style = MaterialTheme.typography.headlineSmall)
                         Text(
-                            if (state.shuffle) "Aleatorio activado · desactívalo para reordenar" else "Mantén el asa para reordenar · desliza para quitar",
+                            when {
+                                state.shuffle && settings.smartShuffle -> "Aleatorio inteligente · las marcadas con ✦ son recomendadas"
+                                state.shuffle -> "Aleatorio activado · desactívalo para reordenar"
+                                else -> "Mantén el asa para reordenar · desliza para quitar"
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             color = LyraColors.TextSecondary,
                         )
                     }
                     if (upcoming.isNotEmpty()) TextButton(onClick = player::clearUpcoming) { Text("Vaciar", color = LyraColors.TextSecondary) }
+                }
+                Row(Modifier.padding(horizontal = 20.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Aleatorio inteligente", style = MaterialTheme.typography.bodyMedium)
+                        Text("Cuela canciones recomendadas en el aleatorio", style = MaterialTheme.typography.bodySmall, color = LyraColors.TextSecondary)
+                    }
+                    Switch(
+                        checked = state.shuffle && settings.smartShuffle,
+                        onCheckedChange = { value ->
+                            actions.launch { actions.container.settings.update { it.copy(smartShuffle = value) } }
+                            if (value && !state.shuffle) player.setShuffle(true)
+                        },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = LyraColors.OnAccent,
+                            checkedTrackColor = LyraColors.Accent,
+                            uncheckedThumbColor = LyraColors.TextSecondary,
+                            uncheckedTrackColor = LyraColors.SurfaceHigher,
+                            uncheckedBorderColor = LyraColors.SurfaceHigher,
+                        ),
+                    )
                 }
                 Row(Modifier.padding(horizontal = 20.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("Radio infinita al acabar", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
@@ -152,19 +179,33 @@ fun QueueSheet(onDismiss: () -> Unit) {
                             entry.song,
                             onClick = { player.skipTo(entry.index) },
                             queueIndex = entry.index,
-                            trailing = if (!state.shuffle) {
-                                {
-                                    Icon(
-                                        Icons.Rounded.DragHandle,
-                                        "Arrastrar",
-                                        tint = LyraColors.TextSecondary,
-                                        modifier = Modifier
-                                            .padding(12.dp)
-                                            .size(24.dp)
-                                            .reorderHandle(reorder, position),
-                                    )
+                            trailing = when {
+                                !state.shuffle -> {
+                                    {
+                                        Icon(
+                                            Icons.Rounded.DragHandle,
+                                            "Arrastrar",
+                                            tint = LyraColors.TextSecondary,
+                                            modifier = Modifier
+                                                .padding(12.dp)
+                                                .size(24.dp)
+                                                .reorderHandle(reorder, position),
+                                        )
+                                    }
                                 }
-                            } else null,
+                                entry.song.id in state.recommendedIds -> {
+                                    {
+                                        // Marca de recomendada y el menú de siempre (para añadirla a una playlist, etc.).
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(Icons.Rounded.AutoAwesome, "Recomendada", tint = LyraColors.Accent, modifier = Modifier.size(16.dp))
+                                            IconButton(onClick = { actions.songMenu = SongMenuRequest(entry.song, queueIndex = entry.index) }) {
+                                                Icon(Icons.Outlined.MoreVert, "Más opciones", tint = LyraColors.TextTertiary, modifier = Modifier.size(20.dp))
+                                            }
+                                        }
+                                    }
+                                }
+                                else -> null
+                            },
                         )
                     }
                 }

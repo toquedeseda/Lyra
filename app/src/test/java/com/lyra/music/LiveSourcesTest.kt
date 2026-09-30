@@ -1,7 +1,9 @@
 package com.lyra.music
 
 import com.lyra.music.data.model.AlbumItem
+import com.lyra.music.data.model.ArtistRef
 import com.lyra.music.data.model.Song
+import com.lyra.music.playback.AlternativeSources
 import com.lyra.music.data.source.innertube.InnerTube
 import com.lyra.music.data.source.innertube.SearchFilter
 import com.lyra.music.data.source.soundcloud.AudioQuality
@@ -16,6 +18,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Test
+import java.io.File
 import java.util.concurrent.TimeUnit
 
 /**
@@ -50,15 +53,16 @@ class LiveSourcesTest {
 
         val home = api.home()
         assertTrue(home.sections.isNotEmpty())
-        val home2 = api.homeMore(home.continuation!!)
-        assertTrue("la segunda página del inicio llega vacía", home2.sections.isNotEmpty())
+        // YouTube no siempre da una segunda página del inicio (según el día y la región).
+        val home2 = home.continuation?.let { api.homeMore(it) }
+        if (home2 != null) assertTrue("la segunda página del inicio llega vacía", home2.sections.isNotEmpty())
 
         val moods = api.moods()
         assertTrue(moods.flatMap { it.categories }.size > 5)
         val mood = api.browse(moods.first().categories.first().endpoint)
         assertTrue(mood.sections.isNotEmpty())
 
-        println("OK YouTube Music: ${album.album.title}, radio ${radio.songs.size}+${radio2.songs.size}, inicio ${home.sections.size}+${home2.sections.size}, moods ${moods.size}")
+        println("OK YouTube Music: ${album.album.title}, radio ${radio.songs.size}+${radio2.songs.size}, inicio ${home.sections.size}+${home2?.sections?.size ?: 0}, moods ${moods.size}")
     }
 
     @Test
@@ -73,6 +77,29 @@ class LiveSourcesTest {
         ).execute()
         println("  GET rango -> ${response.code} (${response.body.bytes().size} bytes)")
         assertTrue(response.code == 206 || response.code == 200)
+    }
+
+    @Test
+    fun `youtube - si el video esta restringido se usa otra version`() = runBlocking {
+        val source = NewPipeSource(http)
+        // Tal cual sale en la búsqueda de vídeos: subido por un fan, con el artista dentro del título.
+        val restricted = Song(
+            "yt:qkO6iBwcoe4",
+            "Rammstein - ''Pussy'' - (OFFICIAL VIDEO) -  [FIXED AUDIO] - (English CC)",
+            listOf(ArtistRef("Eliass Kevrelis")),
+        )
+        val store = File.createTempFile("alternatives", ".json").apply { delete() }
+        val alternatives = AlternativeSources(source, InnerTube(http), { id -> restricted.takeIf { it.id == id } }, store)
+        // El vídeo original pide cuenta (restricción de edad)...
+        val direct = runCatching { source.audioStreams(restricted.id) }
+        assertTrue(direct.isFailure && AlternativeSources.worthLookingElsewhere(direct.exceptionOrNull()!!))
+        // ...pero la canción suena con otra versión, que queda apuntada.
+        val streams = alternatives.audioStreams(restricted.id)
+        val alternative = alternatives.alternativeFor(restricted.id)
+        println("  alternativa de ${restricted.id}: $alternative (${streams.size} pistas)")
+        assertTrue(streams.isNotEmpty())
+        assertNotNull(alternative)
+        assertTrue(store.readText().contains(alternative!!))
     }
 
     @Test

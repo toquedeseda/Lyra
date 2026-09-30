@@ -66,7 +66,10 @@ class AppContainer(val app: Application) {
     val library = LibraryRepository(app, database, downloads, settings, scope)
     val lyrics by lazy { LyricsRepository(Lrclib(http), innerTube, database) }
     val home by lazy { HomeRepository(app, music, library, scope) { releases.releases() } }
-    val streamResolver by lazy { StreamResolver(newPipe, settings, http, app.cacheDir) }
+    val alternatives by lazy {
+        com.lyra.music.playback.AlternativeSources(newPipe, innerTube, { id -> database.songs().get(id)?.toSong() }, File(app.filesDir, "alternatives.json"))
+    }
+    val streamResolver by lazy { StreamResolver(newPipe, settings, http, app.cacheDir, alternatives) }
     val playerCache by lazy {
         SimpleCache(
             File(app.cacheDir, "player"),
@@ -86,6 +89,7 @@ class AppContainer(val app: Application) {
             com.lyra.music.data.repo.SpotifyImporter(http, innerTube), library, scope, app.filesDir,
         )
     }
+    val recommender by lazy { com.lyra.music.data.repo.Recommender(music) }
     val releases by lazy { com.lyra.music.data.repo.ReleasesRepository(app, music, library) }
     val playlistSync by lazy { com.lyra.music.data.repo.PlaylistSync(database, music, library, downloads, spotifyImport) }
 

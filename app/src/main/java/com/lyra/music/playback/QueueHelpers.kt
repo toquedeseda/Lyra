@@ -12,6 +12,8 @@ import com.lyra.music.data.model.Song
 import com.lyra.music.data.repo.LibraryRepository
 import com.lyra.music.data.repo.MusicRepository
 import com.lyra.music.data.settings.SettingsRepository
+import com.lyra.music.data.repo.SongMatcher
+import com.lyra.music.playback.MediaItems.isRecommended
 import com.lyra.music.playback.MediaItems.toMediaItem
 import com.lyra.music.playback.MediaItems.toSong
 import kotlinx.coroutines.CoroutineScope
@@ -172,24 +174,9 @@ class RadioController(
     }
 
     companion object {
-        /** La misma canción puede venir como vídeo, audio o versión: se compara título y artista. */
-        fun songKey(song: Song): String =
-            song.title.lowercase().replace(Regex("\\s*[(\\[].*?[)\\]]"), "").replace(Regex("[^\\p{L}\\p{N}]"), "") +
-                "|" + (song.artists.firstOrNull()?.name?.lowercase() ?: "")
+        fun songKey(song: Song): String = SongMatcher.songKey(song)
 
-        /** Reordena para que no suenen dos canciones seguidas del mismo artista (si se puede). */
-        fun spreadArtists(songs: List<Song>, previousArtist: String?): List<Song> {
-            val pending = songs.toMutableList()
-            val result = mutableListOf<Song>()
-            var last = previousArtist
-            while (pending.isNotEmpty()) {
-                val next = pending.firstOrNull { it.artists.firstOrNull()?.name != last } ?: pending.first()
-                pending.remove(next)
-                result += next
-                last = next.artists.firstOrNull()?.name
-            }
-            return result
-        }
+        fun spreadArtists(songs: List<Song>, previousArtist: String?): List<Song> = SongMatcher.spreadArtists(songs, previousArtist)
     }
 }
 
@@ -247,6 +234,8 @@ data class SavedQueue(
     val positionMs: Long,
     val shuffle: Boolean = false,
     val repeatMode: Int = Player.REPEAT_MODE_OFF,
+    /** Ids de las que metió el aleatorio inteligente. */
+    val recommended: List<String> = emptyList(),
 )
 
 /** Guarda la cola en disco para retomarla al volver a abrir la app. */
@@ -284,12 +273,14 @@ class QueueStore(private val file: File, private val scope: CoroutineScope) {
         val start = (player.currentMediaItemIndex - 100).coerceAtLeast(0)
         val end = (start + 500).coerceAtMost(player.mediaItemCount)
         val songs = (start until end).mapNotNull { player.getMediaItemAt(it).toSong() }
+        val recommended = (start until end).map { player.getMediaItemAt(it) }.filter { it.isRecommended() }.map { it.mediaId }
         return SavedQueue(
             songs = songs,
             index = (player.currentMediaItemIndex - start).coerceIn(0, (songs.size - 1).coerceAtLeast(0)),
             positionMs = player.currentPosition.coerceAtLeast(0),
             shuffle = player.shuffleModeEnabled,
             repeatMode = player.repeatMode,
+            recommended = recommended,
         )
     }
 }

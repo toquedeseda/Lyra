@@ -27,8 +27,6 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
 import java.io.IOException
-import java.text.Normalizer
-import kotlin.math.abs
 
 /**
  * Importa playlists, álbumes y canciones de Spotify sin cuenta ni claves: lee la
@@ -86,32 +84,7 @@ class SpotifyImporter(private val http: OkHttpClient, private val innerTube: Inn
         return best.takeIf { score(track, it) >= 2.5 } ?: candidates.first().takeIf { score(track, it) >= 1.0 }
     }
 
-    private fun score(track: Track, song: Song): Double {
-        var score = 0.0
-        val wantedTitle = normalize(track.title)
-        val title = normalize(song.title)
-        score += when {
-            title == wantedTitle -> 3.0
-            title.contains(wantedTitle) || wantedTitle.contains(title) -> 2.0
-            else -> 0.0
-        }
-        val wantedArtist = normalize(track.artists.firstOrNull().orEmpty())
-        if (wantedArtist.isNotEmpty() && song.artists.any { normalize(it.name).let { a -> a == wantedArtist || a.contains(wantedArtist) || wantedArtist.contains(a) } }) {
-            score += 3.0
-        }
-        val wanted = track.durationMs
-        val actual = song.durationMs
-        if (wanted != null && actual != null) {
-            val diff = abs(wanted - actual) / 1000
-            score += when {
-                diff <= 3 -> 3.0
-                diff <= 8 -> 1.0
-                diff > 25 -> -3.0
-                else -> 0.0
-            }
-        }
-        return score
-    }
+    private fun score(track: Track, song: Song): Double = SongMatcher.score(track.title, track.artists, track.durationMs, song)
 
     companion object {
         /** Tipo e id de un enlace de Spotify (playlist, álbum o canción), o null si no lo es. */
@@ -124,12 +97,7 @@ class SpotifyImporter(private val http: OkHttpClient, private val innerTube: Inn
         }
 
         /** Minúsculas, sin tildes, sin "(feat. …)" ni "- Remastered". */
-        fun normalize(text: String): String =
-            Normalizer.normalize(text.lowercase(), Normalizer.Form.NFD)
-                .replace(Regex("\\p{Mn}+"), "")
-                .replace(Regex("\\s*[(\\[].*?[)\\]]"), "")
-                .replace(Regex("\\s+-\\s+.*(remaster|version|versión|live|edit).*$"), "")
-                .replace(Regex("[^\\p{L}\\p{N}]"), "")
+        fun normalize(text: String): String = SongMatcher.normalize(text)
     }
 }
 

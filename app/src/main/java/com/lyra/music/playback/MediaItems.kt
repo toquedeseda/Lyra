@@ -16,9 +16,30 @@ import java.io.File
  */
 object MediaItems {
     private const val EXTRA_SONG = "lyra.song"
+    private const val EXTRA_RECOMMENDED = "lyra.recommended"
     private val json = Json { ignoreUnknownKeys = true }
 
     fun uriFor(songId: String): Uri = Uri.parse("lyra://" + songId.replaceFirst(':', '/'))
+
+    /** URI interna con título, artista y duración: si YouTube no deja ese vídeo, sirven para buscar otra versión. */
+    fun uriFor(song: Song): Uri = uriFor(song.id).buildUpon()
+        .appendQueryParameter("t", song.title)
+        .appendQueryParameter("a", song.artists.firstOrNull()?.name.orEmpty())
+        .apply { song.durationMs?.let { appendQueryParameter("d", it.toString()) } }
+        .build()
+
+    /** Lo que se sabe de la canción por su URI interna (null si no lleva datos). */
+    fun hintFrom(uri: Uri): Song? {
+        val id = songIdFrom(uri) ?: return null
+        val title = uri.getQueryParameter("t")?.takeIf { it.isNotBlank() } ?: return null
+        val artist = uri.getQueryParameter("a").orEmpty()
+        return Song(
+            id = id,
+            title = title,
+            artists = if (artist.isBlank()) emptyList() else listOf(ArtistRef(artist)),
+            durationMs = uri.getQueryParameter("d")?.toLongOrNull(),
+        )
+    }
 
     fun songIdFrom(uri: Uri): String? {
         if (uri.scheme != "lyra") return null
@@ -27,15 +48,19 @@ object MediaItems {
         return "$host:$path"
     }
 
-    fun Song.toMediaItem(coverFile: File? = null): MediaItem = MediaItem.Builder()
+    /** [recommended]: la ha metido el aleatorio inteligente (se marca en la cola). */
+    fun Song.toMediaItem(coverFile: File? = null, recommended: Boolean = false): MediaItem = MediaItem.Builder()
         .setMediaId(id)
-        .setUri(uriFor(id))
+        .setUri(uriFor(this))
         .setCustomCacheKey(id)
-        .setMediaMetadata(toMetadata(coverFile))
+        .setMediaMetadata(toMetadata(coverFile, recommended))
         .build()
 
-    fun Song.toMetadata(coverFile: File? = null): MediaMetadata {
-        val extras = Bundle().apply { putString(EXTRA_SONG, json.encodeToString(Song.serializer(), this@toMetadata)) }
+    fun Song.toMetadata(coverFile: File? = null, recommended: Boolean = false): MediaMetadata {
+        val extras = Bundle().apply {
+            putString(EXTRA_SONG, json.encodeToString(Song.serializer(), this@toMetadata))
+            if (recommended) putBoolean(EXTRA_RECOMMENDED, true)
+        }
         return MediaMetadata.Builder()
             .setTitle(title)
             .setDisplayTitle(title)
@@ -66,6 +91,9 @@ object MediaItems {
             thumbnailUrl = mediaMetadata.artworkUri?.toString(),
         )
     }
+
+    /** Canción que ha metido el aleatorio inteligente. */
+    fun MediaItem.isRecommended(): Boolean = mediaMetadata.extras?.getBoolean(EXTRA_RECOMMENDED, false) == true
 
     /** Los elementos del árbol de Android Auto llevan el contexto delante: `liked::yt:abc`. */
     fun songIdOf(mediaId: String): String = mediaId.substringAfter("::")

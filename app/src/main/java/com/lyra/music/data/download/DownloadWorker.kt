@@ -76,7 +76,7 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
         try {
             val settings = container.settings.current
             val visible = settings.downloadsVisible && container.downloads.folder.available
-            val stream = container.streamResolver.freshStream(songId, settings.downloadQuality, portable = visible)
+            val stream = container.streamResolver.freshStream(songId, settings.downloadQuality, portable = visible, hint = song)
             val base = DownloadRepository.fileNameFor(songId)
             val tempDir = File(applicationContext.cacheDir, "downloading").apply { mkdirs() }
             val target = File(tempDir, "$base.${stream.extension}")

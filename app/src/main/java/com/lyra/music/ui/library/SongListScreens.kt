@@ -1,5 +1,9 @@
 package com.lyra.music.ui.library
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -14,6 +18,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
+import androidx.compose.material.icons.rounded.AddCircleOutline
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.DeleteSweep
@@ -25,6 +30,7 @@ import androidx.compose.material.icons.rounded.MusicOff
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.SearchOff
 import androidx.compose.material.icons.rounded.Sync
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -37,6 +43,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -52,8 +59,10 @@ import com.lyra.music.data.model.PlaylistItem
 import com.lyra.music.data.model.Song
 import com.lyra.music.data.repo.DOWNLOADS_ID
 import com.lyra.music.data.repo.LIKED_SONGS_ID
+import com.lyra.music.data.repo.SongMatcher
 import com.lyra.music.data.repo.localPlaylistId
 import com.lyra.music.ui.LocalActions
+import com.lyra.music.ui.components.Artwork
 import com.lyra.music.ui.components.CollectionHeader
 import com.lyra.music.ui.components.ConfirmDialog
 import com.lyra.music.ui.components.DownloadAllButton
@@ -61,6 +70,7 @@ import com.lyra.music.ui.components.EmptyView
 import com.lyra.music.ui.components.Mosaic
 import com.lyra.music.ui.components.OutlineIconButton
 import com.lyra.music.ui.components.PageHeader
+import com.lyra.music.ui.components.SectionHeader
 import com.lyra.music.ui.components.SongFilterBar
 import com.lyra.music.ui.components.SongOrder
 import com.lyra.music.ui.components.SongRow
@@ -246,6 +256,15 @@ fun LocalPlaylistScreen(id: Long, contentPadding: PaddingValues) {
     var syncing by remember { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
     var sortOrder by rememberSaveable { mutableStateOf(SongOrder.DEFAULT) }
+    var moving by remember { mutableStateOf(false) }
+    val pickCover = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) {
+            actions.launch {
+                val ok = library.setPlaylistCover(id, uri)
+                actions.message(if (ok) "Portada cambiada" else "No se pudo usar esa imagen")
+            }
+        }
+    }
 
     // Copia local para reordenar sin parpadeos.
     val order = remember { mutableStateListOf<Song>() }
@@ -266,7 +285,30 @@ fun LocalPlaylistScreen(id: Long, contentPadding: PaddingValues) {
         onDrop = { _, _ -> actions.launch { library.reorderPlaylist(id, order.map { it.id }) } },
     )
     val current = playlist
-    val from = current?.let { PlaylistItem(localPlaylistId(it.id), it.name, thumbnailUrl = covers.firstOrNull()) }
+    val from = current?.let { PlaylistItem(localPlaylistId(it.id), it.name, thumbnailUrl = it.customCover ?: covers.firstOrNull()) }
+
+    // Recomendadas para esta playlist ("Otras" pide una tanda nueva).
+    val recommender = actions.container.recommender
+    var recs by remember(id) { mutableStateOf<List<Song>?>(null) }
+    var recsRound by remember(id) { mutableIntStateOf(0) }
+    val hasSongs = songs.isNotEmpty()
+    LaunchedEffect(id, recsRound, hasSongs) {
+        if (!hasSongs) return@LaunchedEffect
+        val previous = recs.orEmpty()
+        recs = null
+        recs = runCatching {
+            recommender.similarTo(
+                songs,
+                count = 10,
+                avoid = if (recsRound > 0) previous else emptyList(),
+                cacheKey = "playlist:$id",
+                refresh = recsRound > 0,
+            )
+        }.getOrDefault(emptyList())
+    }
+    val songIds = remember(songs) { songs.mapTo(HashSet()) { it.id } }
+    val songKeys = remember(songs) { songs.mapTo(HashSet()) { SongMatcher.songKey(it) } }
+    val visibleRecs = recs.orEmpty().filter { it.id !in songIds && SongMatcher.songKey(it) !in songKeys }
 
     LazyColumn(
         state = listState,
@@ -283,8 +325,15 @@ fun LocalPlaylistScreen(id: Long, contentPadding: PaddingValues) {
                     else -> "Playlist"
                 } + if (current?.syncEnabled == true) " · Sincronizada" else "",
                 meta = totalDurationText(songs),
-                backdrop = covers.firstOrNull() ?: current?.coverUrl,
-                cover = { Mosaic(if (covers.size >= 4) covers else listOfNotNull(current?.coverUrl ?: covers.firstOrNull()), it, RoundedCornerShape(16.dp)) },
+                backdrop = current?.customCover ?: covers.firstOrNull() ?: current?.coverUrl,
+                cover = {
+                    val custom = current?.customCover
+                    if (custom != null) {
+                        Artwork(custom, it, RoundedCornerShape(16.dp))
+                    } else {
+                        Mosaic(if (covers.size >= 4) covers else listOfNotNull(current?.coverUrl ?: covers.firstOrNull()), it, RoundedCornerShape(16.dp))
+                    }
+                },
                 onPlay = { actions.play(songs, 0, from = from) },
                 onShuffle = { actions.shuffle(songs, from = from) },
             ) {
@@ -305,6 +354,23 @@ fun LocalPlaylistScreen(id: Long, contentPadding: PaddingValues) {
                     OutlineIconButton(Icons.Rounded.Edit, "Editar", onClick = { menuOpen = true })
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }, containerColor = LyraColors.SurfaceHigh) {
                         DropdownMenuItem(text = { Text("Cambiar nombre") }, onClick = { menuOpen = false; renaming = true })
+                        DropdownMenuItem(
+                            text = { Text("Cambiar portada") },
+                            onClick = {
+                                menuOpen = false
+                                pickCover.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                            },
+                        )
+                        if (current?.customCover != null) {
+                            DropdownMenuItem(
+                                text = { Text("Quitar portada") },
+                                onClick = {
+                                    menuOpen = false
+                                    actions.launch { library.removePlaylistCover(id) }
+                                },
+                            )
+                        }
+                        DropdownMenuItem(text = { Text("Mover a carpeta…") }, onClick = { menuOpen = false; moving = true })
                         if (current?.remoteId != null) {
                             DropdownMenuItem(
                                 text = { Text("Buscar canciones nuevas ahora") },
@@ -376,8 +442,49 @@ fun LocalPlaylistScreen(id: Long, contentPadding: PaddingValues) {
                 } else null,
             )
         }
+
+        // Recomendadas: canciones parecidas para añadir con un toque.
+        if (hasSongs && !filtering && !editing) {
+            item(key = "recs-header") {
+                SectionHeader(
+                    "Recomendadas",
+                    "Según lo que hay en esta playlist",
+                    onMore = if (recs != null) ({ recsRound++ }) else null,
+                    moreLabel = "Otras",
+                )
+            }
+            when {
+                recs == null -> item(key = "recs-loading") {
+                    Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(Modifier.size(24.dp), color = LyraColors.Accent, strokeWidth = 2.dp)
+                    }
+                }
+                visibleRecs.isEmpty() -> item(key = "recs-empty") {
+                    Text(
+                        "Ahora mismo no encuentro recomendaciones. Prueba con «Otras».",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = LyraColors.TextSecondary,
+                        modifier = Modifier.padding(horizontal = 20.dp),
+                    )
+                }
+                else -> itemsIndexed(visibleRecs, key = { _, song -> "rec-${song.id}" }) { index, song ->
+                    SongRow(
+                        song,
+                        onClick = { actions.play(visibleRecs, index, fromLabel = "Recomendadas para ${current?.name.orEmpty()}") },
+                        trailing = {
+                            IconButton(onClick = { actions.addToPlaylist(id, listOf(song), current?.name ?: "la playlist") }) {
+                                Icon(Icons.Rounded.AddCircleOutline, "Añadir a la playlist", tint = LyraColors.TextSecondary)
+                            }
+                        },
+                    )
+                }
+            }
+        }
     }
 
+    if (moving && current != null) {
+        MoveToFolderDialog(id, current.folderId, onDismiss = { moving = false })
+    }
     if (renaming && current != null) {
         TextInputDialog(
             title = "Cambiar nombre",

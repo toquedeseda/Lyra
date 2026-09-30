@@ -8,6 +8,8 @@ import com.lyra.music.data.db.FollowedArtistEntity
 import com.lyra.music.data.db.LyraDatabase
 import com.lyra.music.data.db.PlayEventEntity
 import com.lyra.music.data.db.PlaylistEntity
+import com.lyra.music.data.db.PlaylistFolderEntity
+import com.lyra.music.data.repo.COVERS_DIR
 import com.lyra.music.data.db.SavedAlbumEntity
 import com.lyra.music.data.db.SearchHistoryEntity
 import com.lyra.music.data.db.SongEntity
@@ -49,6 +51,12 @@ data class BackupPlaylist(
     val remoteId: String? = null,
     val coverUrl: String? = null,
     val songIds: List<String>,
+    /** Nombre de su carpeta en la biblioteca. */
+    val folder: String? = null,
+    /** Portada propia dentro del zip (playlist-covers/…). */
+    val cover: String? = null,
+    val syncEnabled: Boolean = false,
+    val autoDownload: Boolean = false,
 )
 
 @Serializable
@@ -93,6 +101,11 @@ class BackupManager(
         val songs = db.songs().all()
         val playlists = db.playlists().all()
         val entries = db.playlists().allEntries().groupBy { it.playlistId }
+        val folderNames = db.folders().all().associate { it.id to it.name }
+        val playlistCovers = playlists.mapNotNull { p ->
+            val file = p.customCover?.let { Uri.parse(it).path }?.let(::File)?.takeIf { it.exists() } ?: return@mapNotNull null
+            p.id to ("playlist-covers/${file.name}" to file)
+        }.toMap()
         val completed = if (includeDownloads) db.downloads().completed() else emptyList()
         val downloadEntries = completed.mapNotNull { d ->
             val location = d.filePath ?: return@mapNotNull null
@@ -112,8 +125,14 @@ class BackupManager(
                     it.isVideo, it.explicit, it.likedAt, it.playCount, it.totalPlayMs, it.lastPlayedAt)
             },
             playlists = playlists.map { p ->
-                BackupPlaylist(p.name, p.description, p.createdAt, p.remoteId, p.coverUrl,
-                    entries[p.id].orEmpty().sortedBy { it.position }.map { it.songId })
+                BackupPlaylist(
+                    p.name, p.description, p.createdAt, p.remoteId, p.coverUrl,
+                    entries[p.id].orEmpty().sortedBy { it.position }.map { it.songId },
+                    folder = p.folderId?.let(folderNames::get),
+                    cover = playlistCovers[p.id]?.first,
+                    syncEnabled = p.syncEnabled,
+                    autoDownload = p.autoDownload,
+                )
             },
             albums = db.library().albumList().map { BackupAlbum(it.id, it.title, it.artists, it.year, it.thumbnailUrl, it.kind, it.savedAt) },
             artists = db.library().artistList().map { BackupArtist(it.id, it.name, it.thumbnailUrl, it.followedAt) },
@@ -127,6 +146,7 @@ class BackupManager(
             zip.putNextEntry(ZipEntry("backup.json"))
             zip.write(json.encodeToString(BackupData.serializer(), data).toByteArray())
             zip.closeEntry()
+            playlistCovers.values.forEach { (name, file) -> addFile(zip, name, file) }
             downloadEntries.forEach { entry ->
                 val original = completed.first { it.songId == entry.songId }
                 // Puede estar en Música/Lyra (content://) o en la carpeta oculta.
@@ -156,6 +176,14 @@ class BackupManager(
                 val entry = zip.nextEntry ?: break
                 when {
                     entry.name == "backup.json" -> data = json.decodeFromString(BackupData.serializer(), zip.readBytes().decodeToString())
+                    entry.name.startsWith("playlist-covers/") -> {
+                        val dir = File(context.filesDir, COVERS_DIR).apply { mkdirs() }
+                        val out = File(dir, File(entry.name).name)
+                        if (out.canonicalPath.startsWith(dir.canonicalPath)) {
+                            out.outputStream().use { zip.copyTo(it) }
+                            extracted[entry.name] = out
+                        }
+                    }
                     entry.name.startsWith("downloads/") || entry.name.startsWith("covers/") -> {
                         val name = File(entry.name).name
                         val dir = if (entry.name.startsWith("downloads/")) downloads.directory else downloads.coversDirectory
@@ -187,12 +215,24 @@ class BackupManager(
         })
 
         val currentPlaylists = db.playlists().all()
+        val folders = db.folders().all().associate { it.name to it.id }.toMutableMap()
         backup.playlists.forEach { p ->
             val match = currentPlaylists.firstOrNull { it.name == p.name && (it.createdAt == p.createdAt || it.remoteId == p.remoteId && p.remoteId != null) }
             val id = match?.id ?: db.playlists().insert(
-                PlaylistEntity(name = p.name, description = p.description, createdAt = p.createdAt, remoteId = p.remoteId, coverUrl = p.coverUrl),
+                PlaylistEntity(
+                    name = p.name, description = p.description, createdAt = p.createdAt, remoteId = p.remoteId, coverUrl = p.coverUrl,
+                    syncEnabled = p.syncEnabled, autoDownload = p.autoDownload,
+                ),
             )
             db.playlists().addSongs(id, p.songIds)
+            // Carpeta (se crea si no existe) y portada propia, si las tenía.
+            p.folder?.let { name ->
+                val folderId = folders.getOrPut(name) { db.folders().insert(PlaylistFolderEntity(name = name)) }
+                if (match?.folderId == null) db.playlists().setFolder(id, folderId)
+            }
+            p.cover?.let(extracted::get)?.let { file ->
+                if (match?.customCover == null) db.playlists().setCustomCover(id, Uri.fromFile(file).toString())
+            }
         }
 
         db.library().saveAlbums(backup.albums.map { SavedAlbumEntity(it.id, it.title, it.artists, it.year, it.thumbnailUrl, it.kind, it.savedAt) })

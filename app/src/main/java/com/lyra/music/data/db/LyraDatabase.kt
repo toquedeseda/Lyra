@@ -18,11 +18,13 @@ import androidx.room.TypeConverters
         SearchHistoryEntity::class,
         DownloadEntity::class,
         LyricsEntity::class,
+        PlaylistFolderEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
     // v2: playlists sincronizadas (syncEnabled, autoDownload, lastSyncedAt).
-    autoMigrations = [AutoMigration(from = 1, to = 2)],
+    // v3: carpetas de playlists y portadas propias (folderId, customCover).
+    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3)],
 )
 @TypeConverters(Converters::class)
 abstract class LyraDatabase : RoomDatabase() {
@@ -33,6 +35,7 @@ abstract class LyraDatabase : RoomDatabase() {
     abstract fun searches(): SearchDao
     abstract fun downloads(): DownloadDao
     abstract fun lyrics(): LyricsDao
+    abstract fun folders(): FolderDao
 
     companion object {
         fun build(context: Context): LyraDatabase =

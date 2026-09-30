@@ -41,7 +41,7 @@ class LyraDataSourceFactory(
 
     private val resolving = ResolvingDataSource.Factory(network) { spec ->
         val songId = MediaItems.songIdFrom(spec.uri) ?: return@Factory spec
-        val resolved = runBlocking { resolver.resolve(songId) }
+        val resolved = runBlocking { resolver.resolve(songId, hint = MediaItems.hintFrom(spec.uri)) }
         spec.withUri(Uri.parse(resolved.uri))
     }
 

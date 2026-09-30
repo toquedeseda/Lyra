@@ -5,6 +5,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import com.lyra.music.playback.MediaItems.toSong
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -28,10 +29,22 @@ class CrossfadeController(
     private val tailFactory: () -> ExoPlayer,
     private val scope: CoroutineScope,
     private val onNewTrack: () -> Unit,
+    private val loudness: () -> LyraAudioProcessor.Loudness? = { null },
 ) : Player.Listener {
 
     /** Duración del crossfade en ms (0 = desactivado). */
     var durationMs: Long = 6_000
+
+    /**
+     * Crossfade inteligente: no mezcla dos pistas seguidas de un mismo álbum (hay
+     * discos que van enlazados) y empieza la mezcla cuando la canción acaba de
+     * verdad, al detectar su fundido o el silencio final, en vez de a tiempo fijo.
+     */
+    var smart: Boolean = true
+
+    private var quietSinceNanos = 0L
+    private var albumCheckKey: String? = null
+    private var albumCheck = false
 
     private var tail: ExoPlayer? = null
     private var tailItemId: String? = null
@@ -61,19 +74,66 @@ class CrossfadeController(
         }
         val duration = main.duration
         if (duration == C.TIME_UNSET || duration < 20_000) return false
+        if (smart && isContinuousAlbum()) {
+            releaseTail()
+            return false
+        }
         val fade = durationMs.coerceAtMost(duration / 4)
         val position = main.currentPosition
         val remaining = duration - position
         val item = main.currentMediaItem ?: return false
+        // En modo inteligente se vigila un poco antes por si la canción acaba antes de tiempo.
+        val window = if (smart) fade + OUTRO_WINDOW_MS else fade
 
-        if (remaining <= fade + PREPARE_AHEAD_MS && tail == null) {
-            prepareTail(item, duration - fade)
+        if (remaining <= window + PREPARE_AHEAD_MS && tail == null) {
+            prepareTail(item, duration - window)
+        }
+        if (smart && remaining in 1_500..window && outroStarted()) {
+            startFade(minOf(fade, remaining))
+            return false
         }
         if (remaining <= fade && remaining > 400) {
             startFade(remaining)
             return false
         }
-        return remaining <= fade + 1_500
+        return remaining <= window + 1_500
+    }
+
+    /** La canción se ha quedado claramente por debajo de su volumen habitual durante un rato. */
+    private fun outroStarted(): Boolean {
+        val now = System.nanoTime()
+        val level = loudness()
+        if (level == null || level.trackDb.isNaN() || now - level.atNanos > 600_000_000L) {
+            quietSinceNanos = 0L
+            return false
+        }
+        if (level.blockDb > level.trackDb - QUIET_BELOW_DB) {
+            quietSinceNanos = 0L
+            return false
+        }
+        if (quietSinceNanos == 0L) quietSinceNanos = now
+        return now - quietSinceNanos >= QUIET_FOR_NANOS
+    }
+
+    /** Dos pistas seguidas del mismo álbum y en su orden (sin aleatorio). */
+    private fun isContinuousAlbum(): Boolean {
+        if (main.shuffleModeEnabled) return false
+        val nextIndex = main.nextMediaItemIndex
+        if (nextIndex == C.INDEX_UNSET) return false
+        val current = main.currentMediaItem ?: return false
+        val next = main.getMediaItemAt(nextIndex)
+        val key = current.mediaId + ">" + next.mediaId
+        if (key != albumCheckKey) {
+            albumCheckKey = key
+            val a = current.toSong()?.album
+            val b = next.toSong()?.album
+            albumCheck = when {
+                a == null || b == null -> false
+                a.id != null && b.id != null -> a.id == b.id
+                else -> a.title.isNotBlank() && a.title.equals(b.title, ignoreCase = true)
+            }
+        }
+        return albumCheck
     }
 
     private fun prepareTail(item: MediaItem, startAtMs: Long) {
@@ -135,6 +195,7 @@ class CrossfadeController(
 
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
         onNewTrack()
+        quietSinceNanos = 0L
         if (internalTransition) {
             internalTransition = false
             return
@@ -163,5 +224,12 @@ class CrossfadeController(
 
     companion object {
         private const val PREPARE_AHEAD_MS = 4_000L
+
+        /** Cuánto antes del punto normal se vigila el final de la canción. */
+        private const val OUTRO_WINDOW_MS = 10_000L
+
+        /** "Acabando" = 18 dB por debajo de la media de la canción durante 1,2 s seguidos. */
+        private const val QUIET_BELOW_DB = 18f
+        private const val QUIET_FOR_NANOS = 1_200_000_000L
     }
 }

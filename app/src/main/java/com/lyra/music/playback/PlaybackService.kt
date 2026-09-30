@@ -86,6 +86,7 @@ class PlaybackService : MediaLibraryService() {
     private var retryCount = 0
     private var pendingShuffleStart = false
     private lateinit var headphones: HeadphonesWatcher
+    private lateinit var smartShuffle: SmartShuffleController
     private var widgetJob: kotlinx.coroutines.Job? = null
 
     /**
@@ -113,8 +114,10 @@ class PlaybackService : MediaLibraryService() {
             },
             scope = scope,
             onNewTrack = { processor.onNewTrack() },
+            loudness = { processor.loudness },
         )
         radio = RadioController(player, c.music, c.settings, c.downloads, c.library, scope)
+        smartShuffle = SmartShuffleController(player, c.recommender, c.downloads, scope)
         tracker = PlaybackTracker(player, c.library, scope)
         queueStore = QueueStore(File(filesDir, "queue.json"), scope)
         autoLibrary = AutoLibrary(this)
@@ -212,6 +215,8 @@ class PlaybackService : MediaLibraryService() {
             container.settings.flow.collect { settings ->
                 processor.config = settings.toFxConfig()
                 crossfade.durationMs = settings.crossfadeSeconds * 1000L
+                crossfade.smart = settings.smartCrossfade
+                smartShuffle.enabled = settings.smartShuffle
                 player.skipSilenceEnabled = settings.skipSilence
             }
         }
@@ -244,7 +249,7 @@ class PlaybackService : MediaLibraryService() {
         val saved = queueStore.load() ?: return
         if (saved.songs.isEmpty()) return
         player.setMediaItems(
-            saved.songs.map { it.toMediaItem(container.downloads.localCover(it.id)) },
+            saved.songs.map { it.toMediaItem(container.downloads.localCover(it.id), recommended = it.id in saved.recommended) },
             saved.index.coerceIn(0, saved.songs.size - 1),
             saved.positionMs,
         )
@@ -508,6 +513,7 @@ class PlaybackService : MediaLibraryService() {
 
     override fun onDestroy() {
         headphones.stop()
+        smartShuffle.release()
         // Al cerrarse el servicio, el widget se queda con la canción en pausa.
         val last = player.currentMediaItem
         val app = applicationContext

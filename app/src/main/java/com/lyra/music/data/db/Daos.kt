@@ -99,10 +99,54 @@ interface SongDao {
 }
 
 @Dao
+interface FolderDao {
+    @Query(
+        """SELECT f.id, f.name, COUNT(p.id) AS playlistCount
+           FROM playlist_folders f LEFT JOIN playlists p ON p.folderId = f.id
+           GROUP BY f.id ORDER BY f.name COLLATE NOCASE""",
+    )
+    fun summaries(): Flow<List<FolderSummary>>
+
+    @Query("SELECT * FROM playlist_folders WHERE id = :id")
+    fun observe(id: Long): Flow<PlaylistFolderEntity?>
+
+    @Query("SELECT * FROM playlist_folders")
+    suspend fun all(): List<PlaylistFolderEntity>
+
+    @Insert
+    suspend fun insert(folder: PlaylistFolderEntity): Long
+
+    @Query("UPDATE playlist_folders SET name = :name WHERE id = :id")
+    suspend fun rename(id: Long, name: String)
+
+    @Query("UPDATE playlists SET folderId = NULL WHERE folderId = :id")
+    suspend fun unassign(id: Long)
+
+    @Query("DELETE FROM playlist_folders WHERE id = :id")
+    suspend fun deleteRow(id: Long)
+
+    /** Borra la carpeta; sus playlists vuelven a la biblioteca (no se borran). */
+    @Transaction
+    suspend fun delete(id: Long) {
+        unassign(id)
+        deleteRow(id)
+    }
+
+    /** Portadas de las playlists de la carpeta (para su mosaico). */
+    @Query(
+        """SELECT COALESCE(p.customCover, p.coverUrl,
+                  (SELECT s.thumbnailUrl FROM playlist_songs ps JOIN songs s ON s.id = ps.songId
+                   WHERE ps.playlistId = p.id AND s.thumbnailUrl IS NOT NULL ORDER BY ps.position LIMIT 1))
+           FROM playlists p WHERE p.folderId = :folderId ORDER BY p.updatedAt DESC LIMIT 4""",
+    )
+    fun covers(folderId: Long): Flow<List<String?>>
+}
+
+@Dao
 interface PlaylistDao {
     @Query(
         """SELECT p.id, p.name, p.description, p.updatedAt, p.remoteId, p.coverUrl,
-                  COUNT(ps.songId) AS songCount, p.syncEnabled
+                  COUNT(ps.songId) AS songCount, p.syncEnabled, p.folderId, p.customCover
            FROM playlists p LEFT JOIN playlist_songs ps ON ps.playlistId = p.id
            GROUP BY p.id ORDER BY p.updatedAt DESC""",
     )
@@ -137,6 +181,12 @@ interface PlaylistDao {
 
     @Query("SELECT * FROM playlists WHERE syncEnabled = 1 AND remoteId IS NOT NULL")
     suspend fun syncable(): List<PlaylistEntity>
+
+    @Query("UPDATE playlists SET folderId = :folderId WHERE id = :id")
+    suspend fun setFolder(id: Long, folderId: Long?)
+
+    @Query("UPDATE playlists SET customCover = :cover WHERE id = :id")
+    suspend fun setCustomCover(id: Long, cover: String?)
 
     @Query("DELETE FROM playlists WHERE id = :id")
     suspend fun delete(id: Long)

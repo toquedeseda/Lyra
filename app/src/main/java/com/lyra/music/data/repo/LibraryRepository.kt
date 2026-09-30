@@ -1,6 +1,15 @@
 package com.lyra.music.data.repo
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.net.Uri
+import coil3.SingletonImageLoader
+import coil3.request.ImageRequest
+import coil3.request.SuccessResult
+import coil3.request.allowHardware
+import coil3.toBitmap
+import com.lyra.music.data.db.FolderSummary
+import com.lyra.music.data.db.PlaylistFolderEntity
 import com.lyra.music.data.db.FollowedArtistEntity
 import com.lyra.music.data.db.LyraDatabase
 import com.lyra.music.data.db.PlayEventEntity
@@ -37,6 +46,9 @@ import java.io.File
 /** Id especial de las playlists locales cuando se tratan como [PlaylistItem]. */
 fun localPlaylistId(id: Long) = "local:$id"
 
+/** Carpeta (dentro de files/) de las portadas elegidas para las playlists. */
+const val COVERS_DIR = "playlist_covers"
+
 const val LIKED_SONGS_ID = "local:liked"
 const val DOWNLOADS_ID = "local:downloads"
 
@@ -48,8 +60,10 @@ class LibraryRepository(
     private val settings: SettingsRepository,
     private val scope: CoroutineScope,
 ) {
+    private val appContext = context.applicationContext
     private val songs = db.songs()
     private val playlists = db.playlists()
+    private val folderDao = db.folders()
     private val library = db.library()
     private val historyDao = db.history()
     private val searches = db.searches()
@@ -108,7 +122,65 @@ class LibraryRepository(
 
     suspend fun renamePlaylist(id: Long, name: String, description: String?) = playlists.rename(id, name, description)
 
-    suspend fun deletePlaylist(id: Long) = playlists.delete(id)
+    suspend fun deletePlaylist(id: Long) {
+        val cover = playlists.get(id)?.customCover
+        playlists.delete(id)
+        deleteCoverFile(cover)
+    }
+
+    // ------------------------------------------------------------- carpetas y portadas
+
+    val folders: Flow<List<FolderSummary>> = folderDao.summaries()
+
+    fun folder(id: Long): Flow<PlaylistFolderEntity?> = folderDao.observe(id)
+
+    fun folderCovers(id: Long): Flow<List<String>> = folderDao.covers(id).map { it.filterNotNull() }
+
+    suspend fun createFolder(name: String): Long = folderDao.insert(PlaylistFolderEntity(name = name.trim()))
+
+    suspend fun renameFolder(id: Long, name: String) = folderDao.rename(id, name.trim())
+
+    suspend fun deleteFolder(id: Long) = folderDao.delete(id)
+
+    suspend fun moveToFolder(playlistId: Long, folderId: Long?) = playlists.setFolder(playlistId, folderId)
+
+    /** Pone de portada una imagen de la galería (recortada en cuadrado y guardada dentro de la app). */
+    suspend fun setPlaylistCover(playlistId: Long, image: Uri): Boolean {
+        val bitmap = loadSquare(image, 900) ?: return false
+        val file = withContext(Dispatchers.IO) {
+            val dir = File(appContext.filesDir, COVERS_DIR).apply { mkdirs() }
+            File(dir, "${playlistId}_${System.currentTimeMillis()}.jpg").also { out ->
+                out.outputStream().use { bitmap.compress(Bitmap.CompressFormat.JPEG, 90, it) }
+            }
+        }
+        val old = playlists.get(playlistId)?.customCover
+        playlists.setCustomCover(playlistId, Uri.fromFile(file).toString())
+        deleteCoverFile(old)
+        return true
+    }
+
+    suspend fun removePlaylistCover(playlistId: Long) {
+        val old = playlists.get(playlistId)?.customCover
+        playlists.setCustomCover(playlistId, null)
+        deleteCoverFile(old)
+    }
+
+    private suspend fun loadSquare(uri: Uri, size: Int): Bitmap? {
+        val request = ImageRequest.Builder(appContext).data(uri).size(size * 2).allowHardware(false).build()
+        val image = (SingletonImageLoader.get(appContext).execute(request) as? SuccessResult)?.image?.toBitmap() ?: return null
+        return withContext(Dispatchers.Default) {
+            val side = minOf(image.width, image.height)
+            val square = Bitmap.createBitmap(image, (image.width - side) / 2, (image.height - side) / 2, side, side)
+            if (side > size) Bitmap.createScaledBitmap(square, size, size, true) else square
+        }
+    }
+
+    private suspend fun deleteCoverFile(cover: String?) = withContext(Dispatchers.IO) {
+        val path = cover?.let { Uri.parse(it).path } ?: return@withContext
+        val file = File(path)
+        // Solo se borran las que guardó Lyra (nunca imágenes de otras carpetas).
+        if (file.parentFile?.name == COVERS_DIR) file.delete()
+    }
 
     /** Mantener al día con la original y/o descargar solas las canciones nuevas. */
     suspend fun setPlaylistSync(id: Long, sync: Boolean, autoDownload: Boolean) = playlists.setSync(id, sync, autoDownload)

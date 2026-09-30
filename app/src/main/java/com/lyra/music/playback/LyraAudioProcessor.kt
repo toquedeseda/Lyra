@@ -68,6 +68,14 @@ class LyraAudioProcessor : BaseAudioProcessor() {
     private var blockSize = 4800
     private var trackFrames = 0L
 
+    /** Sonoridad del último bloque (~100 ms) y la media de la canción hasta ahora, en dB. */
+    class Loudness(val blockDb: Float, val trackDb: Float, val atNanos: Long)
+
+    /** Lo último medido (para el crossfade inteligente); null al empezar una canción. */
+    @Volatile
+    var loudness: Loudness? = null
+        private set
+
     /** Avisa de que empieza otra canción: se vuelve a medir desde cero. */
     fun onNewTrack() {
         newTrackRequested = true
@@ -172,6 +180,9 @@ class LyraAudioProcessor : BaseAudioProcessor() {
             energySum += meanSquare
             energyBlocks++
         }
+        // Media de la canción cuando ya hay unos segundos medidos (si no, NaN).
+        val trackDb = if (energyBlocks >= 20) (10 * log10(energySum / energyBlocks + 1e-12)).toFloat() else Float.NaN
+        loudness = Loudness(blockDb.toFloat(), trackDb, System.nanoTime())
         val target = if (normalize && energyBlocks >= 5) {
             val integratedDb = 10 * log10(energySum / energyBlocks + 1e-12)
             (TARGET_DB - integratedDb).toFloat().coerceIn(MAX_CUT_DB, MAX_BOOST_DB)
@@ -207,6 +218,7 @@ class LyraAudioProcessor : BaseAudioProcessor() {
     }
 
     private fun resetMeasurement() {
+        loudness = null
         energySum = 0.0
         energyBlocks = 0
         blockEnergy = 0.0

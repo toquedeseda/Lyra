@@ -11,6 +11,7 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.lyra.music.data.download.DownloadRepository
 import com.lyra.music.data.model.Song
+import com.lyra.music.playback.MediaItems.isRecommended
 import com.lyra.music.playback.MediaItems.toMediaItem
 import com.lyra.music.playback.MediaItems.toSong
 import kotlinx.coroutines.CompletableDeferred
@@ -40,6 +41,8 @@ data class PlayerUiState(
     val hasPrevious: Boolean = false,
     val error: String? = null,
     val playingFrom: String? = null,
+    /** Canciones de la cola que ha metido el aleatorio inteligente. */
+    val recommendedIds: Set<String> = emptySet(),
 )
 
 data class Progress(val positionMs: Long = 0, val durationMs: Long = 0, val bufferedMs: Long = 0)
@@ -201,6 +204,8 @@ class PlayerConnection(
 
     fun toggleShuffle() = command { it.shuffleModeEnabled = !it.shuffleModeEnabled }
 
+    fun setShuffle(enabled: Boolean) = command { it.shuffleModeEnabled = enabled }
+
     fun cycleRepeat() = command { c ->
         c.repeatMode = when (c.repeatMode) {
             Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
@@ -250,8 +255,10 @@ class PlayerConnection(
     }
 
     private fun refreshQueue(c: MediaController) {
-        val songs = (0 until c.mediaItemCount).mapNotNull { index -> c.getMediaItemAt(index).toSong() }
-        _state.update { it.copy(queue = songs, currentIndex = c.currentMediaItemIndex) }
+        val items = (0 until c.mediaItemCount).map { index -> c.getMediaItemAt(index) }
+        val songs = items.mapNotNull { it.toSong() }
+        val recommended = items.filter { it.isRecommended() }.mapTo(HashSet()) { it.mediaId }
+        _state.update { it.copy(queue = songs, currentIndex = c.currentMediaItemIndex, recommendedIds = recommended) }
     }
 
     /** Orden real de reproducción (tiene en cuenta el modo aleatorio). */

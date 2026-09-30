@@ -115,6 +115,15 @@ fun SettingsScreen(contentPadding: PaddingValues) {
                     description = "La siguiente canción entra mientras termina la anterior.",
                 ) { value -> update { it.copy(crossfadeSeconds = value.toInt()) } }
             }
+            if (s.crossfadeSeconds > 0) {
+                item {
+                    SwitchRow(
+                        "Crossfade inteligente",
+                        "No mezcla pistas seguidas de un mismo álbum, y la siguiente entra cuando la canción acaba de verdad (en su fundido o silencio final).",
+                        s.smartCrossfade,
+                    ) { v -> update { it.copy(smartCrossfade = v) } }
+                }
+            }
             item { SwitchRow("Igualar volumen", "Todas las canciones suenan a un volumen parecido.", s.normalizeVolume) { v -> update { it.copy(normalizeVolume = v) } } }
             item { SwitchRow("Saltar silencios", "Recorta los silencios largos al principio y al final.", s.skipSilence) { v -> update { it.copy(skipSilence = v) } } }
             item { SwitchRow("Radio infinita", "Al acabar la cola sigue con canciones parecidas.", s.infiniteRadio) { v -> update { it.copy(infiniteRadio = v) } } }

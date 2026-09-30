@@ -1,6 +1,7 @@
 package com.lyra.music.playback
 
 import android.net.Uri
+import com.lyra.music.data.model.Song
 import com.lyra.music.data.settings.SettingsRepository
 import com.lyra.music.data.source.soundcloud.AudioQuality
 import com.lyra.music.data.source.soundcloud.AudioStreamInfo
@@ -25,6 +26,7 @@ class StreamResolver(
     private val settings: SettingsRepository,
     private val http: OkHttpClient,
     private val cacheDir: File,
+    private val alternatives: AlternativeSources,
 ) {
     data class Resolved(
         val uri: String,
@@ -39,11 +41,13 @@ class StreamResolver(
     private val memo = ConcurrentHashMap<String, Resolved>()
     private val locks = ConcurrentHashMap<String, Mutex>()
 
-    suspend fun resolve(songId: String, quality: AudioQuality = settings.current.streamQuality): Resolved {
+    /** [hint]: título y artista, para buscar otra versión si YouTube no deja la original. */
+    suspend fun resolve(songId: String, quality: AudioQuality = settings.current.streamQuality, hint: Song? = null): Resolved {
         val lock = locks.getOrPut(songId) { Mutex() }
         return lock.withLock {
             memo[songId]?.takeIf { it.expiresAt > System.currentTimeMillis() + 60_000 }?.let { return@withLock it }
-            val streams = newPipe.audioStreams(songId)
+            // Si YouTube no deja sacar ese vídeo, se usa otra versión de la misma canción.
+            val streams = alternatives.audioStreams(songId, hint)
             val chosen = NewPipeSource.pick(streams, quality) ?: throw IOException("Esta canción no tiene audio disponible")
             val resolved = if (chosen.isHls) {
                 val file = File(cacheDir, "hls/${songId.replace(Regex("[^A-Za-z0-9._-]"), "_")}.${chosen.extension}")
@@ -59,8 +63,8 @@ class StreamResolver(
     }
 
     /** Para descargar se piden siempre las URLs frescas, con la calidad de descarga. */
-    suspend fun freshStream(songId: String, quality: AudioQuality, portable: Boolean = false): AudioStreamInfo {
-        val streams = newPipe.audioStreams(songId)
+    suspend fun freshStream(songId: String, quality: AudioQuality, portable: Boolean = false, hint: Song? = null): AudioStreamInfo {
+        val streams = alternatives.audioStreams(songId, hint)
         return NewPipeSource.pick(streams, quality, portable) ?: throw IOException("Esta canción no tiene audio disponible")
     }
 

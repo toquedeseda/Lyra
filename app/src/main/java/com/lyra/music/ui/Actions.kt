@@ -94,6 +94,25 @@ class LyraActions(
         player.play(songs, 0, shuffle = true, from = fromLabel ?: from?.title)
     }
 
+    /** Botón de aleatorio del reproductor: apagado → aleatorio → inteligente → apagado. */
+    fun cycleShuffle() {
+        val shuffle = player.state.value.shuffle
+        val smart = container.settings.current.smartShuffle
+        scope.launch {
+            when {
+                !shuffle -> player.setShuffle(true)
+                !smart -> {
+                    container.settings.update { it.copy(smartShuffle = true) }
+                    message("Aleatorio inteligente: se colarán canciones recomendadas")
+                }
+                else -> {
+                    container.settings.update { it.copy(smartShuffle = false) }
+                    player.setShuffle(false)
+                }
+            }
+        }
+    }
+
     fun startRadio(song: Song) {
         player.startRadio(song)
     }

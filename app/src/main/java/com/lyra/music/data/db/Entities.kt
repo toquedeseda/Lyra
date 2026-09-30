@@ -83,7 +83,21 @@ data class PlaylistEntity(
     /** Las canciones nuevas se descargan solas. */
     @ColumnInfo(defaultValue = "0") val autoDownload: Boolean = false,
     val lastSyncedAt: Long? = null,
+    /** Carpeta de la biblioteca en la que está (null = suelta). */
+    val folderId: Long? = null,
+    /** Portada elegida por ti (imagen guardada en la app); manda sobre el mosaico. */
+    val customCover: String? = null,
 )
+
+/** Carpeta para agrupar playlists en la biblioteca. */
+@Entity(tableName = "playlist_folders")
+data class PlaylistFolderEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val createdAt: Long = System.currentTimeMillis(),
+)
+
+data class FolderSummary(val id: Long, val name: String, val playlistCount: Int)
 
 @Entity(
     tableName = "playlist_songs",
@@ -213,6 +227,8 @@ data class PlaylistSummary(
     val coverUrl: String?,
     val songCount: Int,
     val syncEnabled: Boolean = false,
+    val folderId: Long? = null,
+    val customCover: String? = null,
 )
 
 data class PlayCount(val songId: String, val plays: Int, val totalMs: Long)

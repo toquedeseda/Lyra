@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -35,6 +36,7 @@ import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Pause
@@ -130,6 +132,7 @@ fun NowPlayingScreen(
     val actions = LocalActions.current
     val player = actions.container.player
     val state by player.state.collectAsState()
+    val settings by actions.container.settings.flow.collectAsState()
     val liked = LocalLibraryState.current.likedIds
     val song = state.song
     val lyrics = rememberLyrics(song)
@@ -199,7 +202,7 @@ fun NowPlayingScreen(
             Row(Modifier.padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onClose) { Icon(Icons.Rounded.KeyboardArrowDown, "Cerrar", modifier = Modifier.size(30.dp)) }
                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Eyebrow("Reproduciendo desde")
+                    Eyebrow(if (song != null && song.id in state.recommendedIds) "Recomendada · aleatorio inteligente" else "Reproduciendo desde")
                     Text(
                         state.playingFrom ?: song?.album?.title ?: "Tu cola",
                         style = MaterialTheme.typography.titleSmall,
@@ -314,7 +317,7 @@ fun NowPlayingScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                ToggleControl(Icons.Rounded.Shuffle, "Aleatorio", state.shuffle, player::toggleShuffle)
+                ShuffleControl(state.shuffle, settings.smartShuffle, actions::cycleShuffle)
                 IconButton(onClick = player::previous, modifier = Modifier.size(56.dp)) {
                     Icon(Icons.Rounded.SkipPrevious, "Anterior", modifier = Modifier.size(38.dp))
                 }
@@ -391,6 +394,39 @@ fun NowPlayingScreen(
 }
 
 /** Aleatorio / repetir: hueso con un puntito debajo cuando están activos. */
+@Composable
+private fun ShuffleControl(shuffle: Boolean, smart: Boolean, onClick: () -> Unit) {
+    val isSmart = shuffle && smart
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        IconButton(onClick = onClick) {
+            Box {
+                Icon(
+                    Icons.Rounded.Shuffle,
+                    if (isSmart) "Aleatorio inteligente" else "Aleatorio",
+                    tint = if (shuffle) LyraColors.Accent else LyraColors.TextTertiary,
+                )
+                if (isSmart) {
+                    Icon(
+                        Icons.Rounded.AutoAwesome,
+                        null,
+                        tint = LyraColors.Accent,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .offset(x = 7.dp, y = (-6).dp)
+                            .size(12.dp),
+                    )
+                }
+            }
+        }
+        Box(
+            Modifier
+                .size(4.dp)
+                .clip(CircleShape)
+                .background(if (shuffle) LyraColors.Accent else Color.Transparent),
+        )
+    }
+}
+
 @Composable
 private fun ToggleControl(icon: ImageVector, description: String, active: Boolean, onClick: () -> Unit) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {

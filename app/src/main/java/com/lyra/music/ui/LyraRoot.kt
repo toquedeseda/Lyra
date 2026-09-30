@@ -220,6 +220,9 @@ fun LyraRoot(container: AppContainer) {
                         composable<ArtistRoute> { ArtistScreen(it.toRoute<ArtistRoute>().id, padding) }
                         composable<PlaylistRoute> { RemotePlaylistScreen(it.toRoute<PlaylistRoute>().id, padding) }
                         composable<LocalPlaylistRoute> { LocalPlaylistScreen(it.toRoute<LocalPlaylistRoute>().id, padding) }
+                        composable<com.lyra.music.ui.navigation.FolderRoute> {
+                            com.lyra.music.ui.library.FolderScreen(it.toRoute<com.lyra.music.ui.navigation.FolderRoute>().id, padding)
+                        }
                         composable<BrowseRoute> {
                             val route = it.toRoute<BrowseRoute>()
                             BrowseScreen(route.browseId, route.params, route.title, padding)

@@ -76,6 +76,7 @@ fun LibraryScreen(contentPadding: PaddingValues) {
     val actions = LocalActions.current
     val library = actions.container.library
     val playlists by library.playlistSummaries.collectAsState(initial = emptyList())
+    val folders by library.folders.collectAsState(initial = emptyList())
     val albums by library.savedAlbums.collectAsState(initial = emptyList())
     val artists by library.followedArtists.collectAsState(initial = emptyList())
     val liked by library.likedIds.collectAsState()
@@ -84,6 +85,7 @@ fun LibraryScreen(contentPadding: PaddingValues) {
 
     var filter by rememberSaveable { mutableIntStateOf(0) }
     var creating by remember { mutableStateOf(false) }
+    var creatingFolder by remember { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
     val searching = query.isNotBlank()
     val filters = listOf("Todo", "Playlists", "Álbumes", "Artistas")
@@ -123,6 +125,7 @@ fun LibraryScreen(contentPadding: PaddingValues) {
                     GhostPillButton("Nueva", onClick = { menu = true }, icon = Icons.Rounded.Add)
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, containerColor = LyraColors.SurfaceHigh) {
                         DropdownMenuItem(text = { Text("Nueva playlist") }, onClick = { menu = false; creating = true })
+                        DropdownMenuItem(text = { Text("Nueva carpeta") }, onClick = { menu = false; creatingFolder = true })
                         DropdownMenuItem(text = { Text("Importar de Spotify") }, onClick = { menu = false; actions.importDialog = "" })
                     }
                 }
@@ -141,10 +144,12 @@ fun LibraryScreen(contentPadding: PaddingValues) {
 
         if (searching) {
             val text = query.trim()
+            val folderMatches = folders.filter { matchesQuery(text, it.name) }
             val playlistMatches = playlists.filter { matchesQuery(text, it.name, it.description) }
             val albumMatches = albums.filter { matchesQuery(text, it.title, it.artistsText, it.year) }
             val artistMatches = artists.filter { matchesQuery(text, it.title) }
-            val nothing = songMatches.isEmpty() && playlistMatches.isEmpty() && albumMatches.isEmpty() && artistMatches.isEmpty()
+            val nothing = songMatches.isEmpty() && folderMatches.isEmpty() && playlistMatches.isEmpty() &&
+                albumMatches.isEmpty() && artistMatches.isEmpty()
 
             if (nothing && librarySongs != null) {
                 item {
@@ -163,6 +168,10 @@ fun LibraryScreen(contentPadding: PaddingValues) {
                 itemsIndexed(songMatches.take(100), key = { _, song -> "s${song.id}" }) { index, song ->
                     SongRow(song, onClick = { actions.play(songMatches, index, fromLabel = "Tu biblioteca") })
                 }
+            }
+            if (folderMatches.isNotEmpty()) {
+                item { SectionHeader("Carpetas") }
+                items(folderMatches, key = { "f${it.id}" }) { FolderRow(it) }
             }
             if (playlistMatches.isNotEmpty()) {
                 item { SectionHeader("Playlists") }
@@ -212,7 +221,7 @@ fun LibraryScreen(contentPadding: PaddingValues) {
 
         if (showPlaylists) {
             item { SectionHeader("Tus listas") }
-            if (playlists.isEmpty()) {
+            if (playlists.isEmpty() && folders.isEmpty()) {
                 item {
                     InfoCard(
                         title = "Aún no tienes listas",
@@ -225,7 +234,9 @@ fun LibraryScreen(contentPadding: PaddingValues) {
                     }
                 }
             }
-            items(playlists, key = { "p${it.id}" }) { PlaylistRow(it) }
+            // Primero las carpetas y después las playlists que no están en ninguna.
+            items(folders, key = { "f${it.id}" }) { FolderRow(it) }
+            items(playlists.filter { it.folderId == null }, key = { "p${it.id}" }) { PlaylistRow(it) }
         }
         if ((filter == 0 && albums.isNotEmpty()) || filter == 2) {
             item { SectionHeader("Álbumes") }
@@ -255,6 +266,22 @@ fun LibraryScreen(contentPadding: PaddingValues) {
         }
     }
 
+    if (creatingFolder) {
+        TextInputDialog(
+            title = "Nueva carpeta",
+            initial = "",
+            placeholder = "Nombre de la carpeta",
+            confirm = "Crear",
+            onDismiss = { creatingFolder = false },
+            onConfirm = { name ->
+                creatingFolder = false
+                actions.launch {
+                    val id = actions.container.library.createFolder(name)
+                    actions.nav.navigate(com.lyra.music.ui.navigation.FolderRoute(id))
+                }
+            },
+        )
+    }
     if (creating) {
         TextInputDialog(
             title = "Nueva playlist",
@@ -275,9 +302,8 @@ fun LibraryScreen(contentPadding: PaddingValues) {
 
 @UnstableApi
 @Composable
-private fun PlaylistRow(playlist: PlaylistSummary) {
+fun PlaylistRow(playlist: PlaylistSummary) {
     val actions = LocalActions.current
-    val covers by actions.container.library.playlistCovers(playlist.id).collectAsState(initial = emptyList())
     Row(
         Modifier
             .fillMaxWidth()
@@ -285,11 +311,7 @@ private fun PlaylistRow(playlist: PlaylistSummary) {
             .padding(horizontal = 20.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Mosaic(
-            if (covers.size >= 4) covers else listOfNotNull(playlist.coverUrl ?: covers.firstOrNull()),
-            Modifier.size(56.dp),
-            RoundedCornerShape(10.dp),
-        )
+        PlaylistCover(playlist, Modifier.size(56.dp))
         Spacer(Modifier.width(14.dp))
         Column {
             Text(playlist.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
