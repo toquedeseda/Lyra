@@ -58,6 +58,7 @@ class AppContainer(val app: Application) {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     val http = Http.create(app)
     val settings = SettingsRepository(app, scope)
+    val network = com.lyra.music.core.NetworkMonitor(app)
     val database = LyraDatabase.build(app)
     val innerTube = InnerTube(http, settings.visitorStore)
     val newPipe by lazy { NewPipeSource(http) }
@@ -115,6 +116,8 @@ class LyraApp : Application(), SingletonImageLoader.Factory {
 
     override fun onCreate() {
         super.onCreate()
+        // Lo primero: así también se apunta un cierre que pase al arrancar.
+        com.lyra.music.core.ErrorLog.install(this)
         container = AppContainer(this)
         createChannels()
         com.lyra.music.data.Notifier.createChannels(this)
@@ -140,6 +143,14 @@ class LyraApp : Application(), SingletonImageLoader.Factory {
         // Si quedaron descargas a medias, se retoman.
         container.scope.launch {
             if (container.database.downloads().pendingCount() > 0) container.downloads.start()
+        }
+        // Una vez: títulos limpios en lo que ya estaba guardado (y en los archivos descargados).
+        container.scope.launch {
+            val settings = container.settings.loaded()
+            if (!settings.titlesCleaned) {
+                runCatching { container.downloads.relabel(container.library.cleanStoredTitles()) }
+                container.settings.update { it.copy(titlesCleaned = true) }
+            }
         }
         // Una vez: lo que estaba descargado a escondidas pasa a Música/Lyra.
         container.scope.launch {

@@ -39,6 +39,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.lyra.music.ui.components.PlayPauseIcon
+import com.lyra.music.ui.components.LikeButton
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
@@ -125,19 +131,22 @@ fun MiniPlayer(modifier: Modifier = Modifier, sharedScope: SharedTransitionScope
                 Artwork(artworkFor(song), artModifier, RoundedCornerShape(10.dp))
             }
             Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(song.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(song.artistsText, style = MaterialTheme.typography.bodySmall, color = LyraColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            // Al cambiar de canción, el texto nuevo sube y el viejo se va.
+            AnimatedContent(
+                targetState = song,
+                contentKey = { it.id },
+                transitionSpec = {
+                    (slideInVertically { it / 2 } + fadeIn()) togetherWith (slideOutVertically { -it / 2 } + fadeOut())
+                },
+                modifier = Modifier.weight(1f),
+                label = "canción",
+            ) { current ->
+                Column {
+                    Text(current.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(current.artistsText, style = MaterialTheme.typography.bodySmall, color = LyraColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
             }
-            val isLiked = song.id in liked
-            IconButton(onClick = { actions.toggleLike(song) }) {
-                Icon(
-                    if (isLiked) Icons.Rounded.Favorite else Icons.Outlined.FavoriteBorder,
-                    "Me gusta",
-                    tint = if (isLiked) LyraColors.Like else LyraColors.TextSecondary,
-                    modifier = Modifier.size(22.dp),
-                )
-            }
+            LikeButton(song.id in liked, onClick = { actions.toggleLike(song) }, size = 22.dp)
             Box(
                 Modifier
                     .size(38.dp)
@@ -149,12 +158,7 @@ fun MiniPlayer(modifier: Modifier = Modifier, sharedScope: SharedTransitionScope
                 if (state.isBuffering && !state.isPlaying) {
                     CircularProgressIndicator(Modifier.size(18.dp), color = LyraColors.OnAccent, strokeWidth = 2.dp)
                 } else {
-                    Icon(
-                        if (state.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                        if (state.isPlaying) "Pausa" else "Reproducir",
-                        tint = LyraColors.OnAccent,
-                        modifier = Modifier.size(24.dp),
-                    )
+                    PlayPauseIcon(state.isPlaying, LyraColors.OnAccent, 24.dp)
                 }
             }
         }

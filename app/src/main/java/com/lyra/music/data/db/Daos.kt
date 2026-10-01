@@ -182,6 +182,15 @@ interface PlaylistDao {
     @Query("SELECT * FROM playlists WHERE syncEnabled = 1 AND remoteId IS NOT NULL")
     suspend fun syncable(): List<PlaylistEntity>
 
+    @Query(
+        """SELECT p.id, p.name, p.customCover, p.coverUrl, COUNT(ps.songId) AS total,
+                  SUM(CASE WHEN d.state = 2 THEN 1 ELSE 0 END) AS downloaded
+           FROM playlists p JOIN playlist_songs ps ON ps.playlistId = p.id
+           LEFT JOIN downloads d ON d.songId = ps.songId
+           GROUP BY p.id HAVING downloaded > 0 ORDER BY p.updatedAt DESC""",
+    )
+    fun downloadCounts(): Flow<List<PlaylistDownloads>>
+
     @Query("UPDATE playlists SET folderId = :folderId WHERE id = :id")
     suspend fun setFolder(id: Long, folderId: Long?)
 
@@ -348,6 +357,16 @@ interface DownloadDao {
 
     @Query("SELECT * FROM downloads WHERE state = 2")
     suspend fun completed(): List<DownloadEntity>
+
+    /** Descargas que no suenan desde [cutoff] (ni se bajaron después), sin las de "Me gusta"; las más grandes primero. */
+    @Query(
+        """SELECT s.id, s.title, s.artists, s.thumbnailUrl, d.totalBytes, s.lastPlayedAt, d.completedAt
+           FROM downloads d JOIN songs s ON s.id = d.songId
+           WHERE d.state = 2 AND COALESCE(d.completedAt, d.requestedAt) < :cutoff
+             AND (s.lastPlayedAt IS NULL OR s.lastPlayedAt < :cutoff) AND s.likedAt IS NULL
+           ORDER BY d.totalBytes DESC""",
+    )
+    fun stale(cutoff: Long): Flow<List<StaleDownload>>
 
     @Query("SELECT * FROM downloads WHERE state = 0 ORDER BY requestedAt LIMIT 1")
     suspend fun nextQueued(): DownloadEntity?

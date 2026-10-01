@@ -153,6 +153,7 @@ class SpotifyImportManager(
                 _state.value = ImportState.Done(playlistId, collection.name, found.size, missing)
             } catch (e: Exception) {
                 _state.value = ImportState.Failed(e.message ?: "No se pudo importar")
+                com.lyra.music.core.ErrorLog.record("Importar de Spotify", e.message ?: "No se pudo importar", e, extra = url)
             }
         }
     }

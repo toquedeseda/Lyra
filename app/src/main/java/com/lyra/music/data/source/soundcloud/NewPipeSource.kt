@@ -7,6 +7,7 @@ import com.lyra.music.data.model.MusicItem
 import com.lyra.music.data.model.PlaylistItem
 import com.lyra.music.data.model.PlaylistPage
 import com.lyra.music.data.model.Song
+import com.lyra.music.data.model.cleaned
 import com.lyra.music.data.model.remoteId
 import com.lyra.music.data.source.innertube.hiResArtwork
 import kotlinx.coroutines.Dispatchers
@@ -174,7 +175,7 @@ class NewPipeSource(client: OkHttpClient) {
             artists = listOf(ArtistRef(info.uploaderName, info.uploaderUrl?.let(::soundCloudId))),
             durationMs = info.duration.takeIf { it > 0 }?.times(1000),
             thumbnailUrl = bestImage(info.thumbnails),
-        )
+        ).cleaned()
     }
 
     private fun toMusicItem(item: InfoItem): MusicItem? = when (item) {
@@ -203,7 +204,7 @@ class NewPipeSource(client: OkHttpClient) {
             artists = listOf(ArtistRef(stream.uploaderName ?: "SoundCloud", stream.uploaderUrl?.let(::soundCloudId))),
             durationMs = stream.duration.takeIf { it > 0 }?.times(1000),
             thumbnailUrl = bestImage(stream.thumbnails),
-        )
+        ).cleaned()
     }
 
     companion object {

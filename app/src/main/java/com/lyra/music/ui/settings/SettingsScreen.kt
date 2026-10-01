@@ -54,6 +54,7 @@ import com.lyra.music.ui.components.ConfirmDialog
 import com.lyra.music.ui.home.ignoresBatteryOptimizations
 import com.lyra.music.ui.home.openBatterySettings
 import com.lyra.music.ui.library.formatBytes
+import com.lyra.music.ui.library.monthsText
 import com.lyra.music.ui.navigation.EqualizerRoute
 import com.lyra.music.ui.navigation.IslandRoute
 import com.lyra.music.ui.theme.LyraColors
@@ -82,6 +83,8 @@ fun SettingsScreen(contentPadding: PaddingValues) {
     var confirmDownloads by remember { mutableStateOf(false) }
     var confirmHistory by remember { mutableStateOf(false) }
     var includeDownloads by remember { mutableStateOf(false) }
+    var staleDialog by remember { mutableStateOf(false) }
+    val errors by com.lyra.music.core.ErrorLog.entries.collectAsState()
 
     fun update(transform: (AppSettings) -> AppSettings) = actions.launch { container.settings.update(transform) }
 
@@ -156,6 +159,12 @@ fun SettingsScreen(contentPadding: PaddingValues) {
             }
             item { SwitchRow("Solo con Wi‑Fi", "No gasta datos móviles al descargar.", s.downloadWifiOnly) { v -> update { it.copy(downloadWifiOnly = v) } } }
             item { SwitchRow("Descargar las que te gustan", "Al darle al corazón, se descarga sola.", s.autoDownloadLiked) { v -> update { it.copy(autoDownloadLiked = v) } } }
+            item {
+                NavRow(
+                    "Avisar de descargas sin escuchar",
+                    if (s.staleDownloadMonths == 0) "Nunca" else "Si llevas ${monthsText(s.staleDownloadMonths)} sin escucharlas (las de Me gusta no cuentan)",
+                ) { staleDialog = true }
+            }
             item { InfoRow("Espacio usado", "Descargas: ${formatBytes(downloadBytes)} · Caché: ${formatBytes(cacheBytes)}") }
             item {
                 NavRow("Vaciar la caché", "Lo escuchado recientemente sin descargar (${formatBytes(cacheBytes)})") {
@@ -233,6 +242,14 @@ fun SettingsScreen(contentPadding: PaddingValues) {
                 }
             }
 
+            item { Group("Ayuda") }
+            item {
+                NavRow(
+                    "Informe de errores",
+                    if (errors.isEmpty()) "Sin errores guardados" else "${errors.size} guardados · cópialo y pásalo si algo va mal",
+                ) { actions.nav.navigate(com.lyra.music.ui.navigation.ErrorsRoute) }
+            }
+
             item { Group("Acerca de") }
             item {
                 InfoRow(
@@ -254,6 +271,18 @@ fun SettingsScreen(contentPadding: PaddingValues) {
             val quality = AudioQuality.entries[index]
             update { if (which == "stream") it.copy(streamQuality = quality) else it.copy(downloadQuality = quality) }
             qualityDialog = null
+        }
+    }
+    if (staleDialog) {
+        val options = listOf(0, 3, 6, 12)
+        ChoiceDialog(
+            title = "Avisar de descargas sin escuchar",
+            options = options.map { (if (it == 0) "Nunca" else "Tras ${monthsText(it)}") to "" },
+            selected = options.indexOf(s.staleDownloadMonths).coerceAtLeast(0),
+            onDismiss = { staleDialog = false },
+        ) { index ->
+            update { it.copy(staleDownloadMonths = options[index]) }
+            staleDialog = false
         }
     }
     if (regionDialog) {

@@ -53,6 +53,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
@@ -305,10 +311,15 @@ fun SongRow(
     val isCurrent = state.currentSongId == song.id
     val download = state.downloads[song.id]
     val openMenu = { actions.songMenu = SongMenuRequest(song, localPlaylistId, queueIndex) }
+    // Sin internet, lo que no está descargado no puede sonar: se ve apagado.
+    val available = state.online || download?.state == DownloadState.COMPLETED
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .pressable(onLongClick = openMenu, pressedScale = 0.985f, onClick = onClick)
+            .alpha(if (available) 1f else 0.38f)
+            .pressable(onLongClick = openMenu, pressedScale = 0.985f) {
+                if (available) onClick() else actions.message("Sin conexión: esta canción no está descargada")
+            }
             .padding(start = 20.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -374,6 +385,17 @@ fun SongRow(
 
 @Composable
 fun DownloadIndicator(state: Int?, progress: Float?) {
+    AnimatedContent(
+        targetState = state,
+        transitionSpec = { (scaleIn(initialScale = 0.4f, animationSpec = spring(dampingRatio = 0.45f)) + fadeIn()) togetherWith fadeOut() },
+        label = "estado de descarga",
+    ) { current ->
+        Row(verticalAlignment = Alignment.CenterVertically) { DownloadIndicatorContent(current, progress) }
+    }
+}
+
+@Composable
+private fun DownloadIndicatorContent(state: Int?, progress: Float?) {
     when (state) {
         DownloadState.COMPLETED -> {
             Icon(Icons.Rounded.CheckCircle, "Descargada", tint = LyraColors.Accent, modifier = Modifier.size(13.dp))

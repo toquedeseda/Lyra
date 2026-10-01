@@ -99,6 +99,27 @@ data class PlaylistFolderEntity(
 
 data class FolderSummary(val id: Long, val name: String, val playlistCount: Int)
 
+/** Una playlist y cuántas de sus canciones están descargadas (Inicio sin conexión). */
+data class PlaylistDownloads(
+    val id: Long,
+    val name: String,
+    val customCover: String?,
+    val coverUrl: String?,
+    val total: Int,
+    val downloaded: Int,
+)
+
+/** Descarga que llevas tiempo sin escuchar (para liberar espacio). */
+data class StaleDownload(
+    val id: String,
+    val title: String,
+    val artists: List<ArtistRef>,
+    val thumbnailUrl: String?,
+    val totalBytes: Long,
+    val lastPlayedAt: Long?,
+    val completedAt: Long?,
+)
+
 @Entity(
     tableName = "playlist_songs",
     primaryKeys = ["playlistId", "songId"],

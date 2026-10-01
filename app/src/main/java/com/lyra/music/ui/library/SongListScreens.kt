@@ -53,6 +53,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.flow.flowOf
 import androidx.media3.common.util.UnstableApi
 import com.lyra.music.data.db.DownloadState
 import com.lyra.music.data.model.PlaylistItem
@@ -62,6 +63,7 @@ import com.lyra.music.data.repo.LIKED_SONGS_ID
 import com.lyra.music.data.repo.SongMatcher
 import com.lyra.music.data.repo.localPlaylistId
 import com.lyra.music.ui.LocalActions
+import com.lyra.music.ui.LocalLibraryState
 import com.lyra.music.ui.components.Artwork
 import com.lyra.music.ui.components.CollectionHeader
 import com.lyra.music.ui.components.ConfirmDialog
@@ -118,7 +120,7 @@ fun LikedScreen(contentPadding: PaddingValues) {
             if (shown.isEmpty()) item { NoMatches(query) }
         }
         itemsIndexed(shown, key = { _, song -> song.id }) { index, song ->
-            SongRow(song, onClick = { actions.play(shown, index, from = from) })
+            SongRow(song, onClick = { actions.play(shown, index, from = from) }, modifier = Modifier.animateItem())
         }
     }
 }
@@ -135,6 +137,10 @@ fun DownloadsScreen(contentPadding: PaddingValues) {
     val all = rows.orEmpty().map { it.toSong() }
     val from = PlaylistItem(DOWNLOADS_ID, "Descargas")
     var confirmClear by remember { mutableStateOf(false) }
+    val settings by actions.container.settings.flow.collectAsState()
+    val months = settings.staleDownloadMonths
+    val stale by remember(months) { if (months > 0) downloads.stale(months) else flowOf(emptyList()) }.collectAsState(initial = emptyList())
+    var cleaning by remember { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
     var order by rememberSaveable { mutableStateOf(SongOrder.DEFAULT) }
     val shownRows = remember(rows, query, order) { rows.orEmpty().filterSongs(query, order) { it.toSong() } }
@@ -166,6 +172,9 @@ fun DownloadsScreen(contentPadding: PaddingValues) {
         }
         if (rows != null && all.isEmpty()) {
             item { EmptyView(Icons.Rounded.ArrowDownward, "Nada descargado todavía", "Descarga canciones, álbumes o playlists para escucharlos sin conexión.") }
+        }
+        if (stale.isNotEmpty()) {
+            item(key = "cleanup") { CleanupCard(stale, months, onReview = { cleaning = true }) }
         }
         if (all.isNotEmpty()) {
             item(key = "filter") { SongFilterBar(query, { query = it }, order, { order = it }, "Recientes") }
@@ -205,6 +214,7 @@ fun DownloadsScreen(contentPadding: PaddingValues) {
             onConfirm = { actions.launch { downloads.clearAll() } },
         )
     }
+    if (cleaning) CleanupSheet(stale, months, onDismiss = { cleaning = false })
 }
 
 @UnstableApi
@@ -292,6 +302,8 @@ fun LocalPlaylistScreen(id: Long, contentPadding: PaddingValues) {
     var recs by remember(id) { mutableStateOf<List<Song>?>(null) }
     var recsRound by remember(id) { mutableIntStateOf(0) }
     val hasSongs = songs.isNotEmpty()
+    // Sin internet no se pueden pedir recomendaciones.
+    val online = LocalLibraryState.current.online
     LaunchedEffect(id, recsRound, hasSongs) {
         if (!hasSongs) return@LaunchedEffect
         val previous = recs.orEmpty()
@@ -444,7 +456,7 @@ fun LocalPlaylistScreen(id: Long, contentPadding: PaddingValues) {
         }
 
         // Recomendadas: canciones parecidas para añadir con un toque.
-        if (hasSongs && !filtering && !editing) {
+        if (hasSongs && !filtering && !editing && online) {
             item(key = "recs-header") {
                 SectionHeader(
                     "Recomendadas",
@@ -471,6 +483,7 @@ fun LocalPlaylistScreen(id: Long, contentPadding: PaddingValues) {
                     SongRow(
                         song,
                         onClick = { actions.play(visibleRecs, index, fromLabel = "Recomendadas para ${current?.name.orEmpty()}") },
+                        modifier = Modifier.animateItem(),
                         trailing = {
                             IconButton(onClick = { actions.addToPlaylist(id, listOf(song), current?.name ?: "la playlist") }) {
                                 Icon(Icons.Rounded.AddCircleOutline, "Añadir a la playlist", tint = LyraColors.TextSecondary)

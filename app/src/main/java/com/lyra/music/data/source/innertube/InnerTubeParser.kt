@@ -21,6 +21,7 @@ import com.lyra.music.data.model.SearchSuggestions
 import com.lyra.music.data.model.Section
 import com.lyra.music.data.model.SectionStyle
 import com.lyra.music.data.model.Song
+import com.lyra.music.data.model.cleaned
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -137,7 +138,7 @@ object InnerTubeParser {
             thumbnailUrl = renderer.obj("thumbnail").bestThumbnail() ?: fallbackThumbnail,
             isVideo = videoType != null && videoType != TYPE_SONG,
             explicit = isExplicit(renderer),
-        )
+        ).cleaned()
     }
 
     /** Fila de lista que sea un álbum, artista o playlist. */
@@ -204,7 +205,7 @@ object InnerTubeParser {
                 thumbnailUrl = thumbnail,
                 isVideo = videoType != null && videoType != TYPE_SONG,
                 explicit = isExplicit(renderer),
-            )
+            ).cleaned()
         }
         nav.obj("watchPlaylistEndpoint")?.let { watch ->
             val playlistId = watch.str("playlistId") ?: return null
@@ -254,7 +255,7 @@ object InnerTubeParser {
             thumbnailUrl = renderer.obj("thumbnail").bestThumbnail(),
             isVideo = videoType != null && videoType != TYPE_SONG,
             explicit = isExplicit(renderer),
-        )
+        ).cleaned()
     }
 
     private fun itemFromAny(entry: JsonElement): MusicItem? {
@@ -400,7 +401,7 @@ object InnerTubeParser {
                 durationMs = subtitle.firstNotNullOfOrNull { parseDuration(it.text) },
                 thumbnailUrl = thumbnail,
                 isVideo = first.videoType != null && first.videoType != TYPE_SONG,
-            )
+            ).cleaned()
             first.pageType == PAGE_ARTIST && first.browseId != null ->
                 ArtistItem("yt:${first.browseId}", title, thumbnail,
                     subtitle.groups().drop(1).joinToString(" • ") { it.joinText() }.ifEmpty { null })

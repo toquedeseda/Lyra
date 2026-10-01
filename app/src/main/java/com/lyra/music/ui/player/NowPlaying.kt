@@ -64,6 +64,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.lyra.music.ui.components.bounceOnChange
+import com.lyra.music.ui.components.PlayPauseIcon
+import com.lyra.music.ui.components.NudgeButton
+import com.lyra.music.ui.components.LikeButton
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
@@ -274,12 +285,20 @@ fun NowPlayingScreen(
             // Título en serif, artista y corazón
             Row(Modifier.padding(horizontal = 28.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text(
-                        song.title,
-                        style = MaterialTheme.typography.headlineLarge,
-                        maxLines = 1,
-                        modifier = Modifier.basicMarquee(),
-                    )
+                    AnimatedContent(
+                        targetState = song.title,
+                        transitionSpec = {
+                            (slideInVertically { it / 3 } + fadeIn(tween(260))) togetherWith fadeOut(tween(120))
+                        },
+                        label = "título",
+                    ) { title ->
+                        Text(
+                            title,
+                            style = MaterialTheme.typography.headlineLarge,
+                            maxLines = 1,
+                            modifier = Modifier.basicMarquee(),
+                        )
+                    }
                     Text(
                         song.artistsText,
                         style = MaterialTheme.typography.bodyLarge,
@@ -296,15 +315,7 @@ fun NowPlayingScreen(
                             },
                     )
                 }
-                val isLiked = song.id in liked
-                IconButton(onClick = { actions.toggleLike(song) }) {
-                    Icon(
-                        if (isLiked) Icons.Rounded.Favorite else Icons.Outlined.FavoriteBorder,
-                        if (isLiked) "Quitar de Me gusta" else "Me gusta",
-                        tint = if (isLiked) LyraColors.Like else LyraColors.TextPrimary,
-                        modifier = Modifier.size(28.dp),
-                    )
-                }
+                LikeButton(song.id in liked, onClick = { actions.toggleLike(song) }, size = 28.dp, inactiveTint = LyraColors.TextPrimary)
             }
 
             SeekBar()
@@ -318,9 +329,7 @@ fun NowPlayingScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 ShuffleControl(state.shuffle, settings.smartShuffle, actions::cycleShuffle)
-                IconButton(onClick = player::previous, modifier = Modifier.size(56.dp)) {
-                    Icon(Icons.Rounded.SkipPrevious, "Anterior", modifier = Modifier.size(38.dp))
-                }
+                NudgeButton(Icons.Rounded.SkipPrevious, "Anterior", direction = -1, size = 38.dp, onClick = player::previous)
                 Box(
                     Modifier
                         .size(74.dp)
@@ -333,17 +342,10 @@ fun NowPlayingScreen(
                     if (state.isBuffering && !state.isPlaying) {
                         CircularProgressIndicator(Modifier.size(30.dp), color = LyraColors.OnAccent, strokeWidth = 3.dp)
                     } else {
-                        Icon(
-                            if (state.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                            if (state.isPlaying) "Pausa" else "Reproducir",
-                            tint = LyraColors.OnAccent,
-                            modifier = Modifier.size(40.dp),
-                        )
+                        PlayPauseIcon(state.isPlaying, LyraColors.OnAccent, 40.dp)
                     }
                 }
-                IconButton(onClick = player::next, modifier = Modifier.size(56.dp)) {
-                    Icon(Icons.Rounded.SkipNext, "Siguiente", modifier = Modifier.size(38.dp))
-                }
+                NudgeButton(Icons.Rounded.SkipNext, "Siguiente", direction = 1, size = 38.dp, onClick = player::next)
                 ToggleControl(
                     if (state.repeatMode == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
                     "Repetir",
@@ -397,13 +399,15 @@ fun NowPlayingScreen(
 @Composable
 private fun ShuffleControl(shuffle: Boolean, smart: Boolean, onClick: () -> Unit) {
     val isSmart = shuffle && smart
+    val tint by animateColorAsState(if (shuffle) LyraColors.Accent else LyraColors.TextTertiary, label = "aleatorio")
+    val dot by animateColorAsState(if (shuffle) LyraColors.Accent else Color.Transparent, label = "punto")
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         IconButton(onClick = onClick) {
-            Box {
+            Box(Modifier.bounceOnChange(shuffle to smart)) {
                 Icon(
                     Icons.Rounded.Shuffle,
                     if (isSmart) "Aleatorio inteligente" else "Aleatorio",
-                    tint = if (shuffle) LyraColors.Accent else LyraColors.TextTertiary,
+                    tint = tint,
                 )
                 if (isSmart) {
                     Icon(
@@ -422,22 +426,24 @@ private fun ShuffleControl(shuffle: Boolean, smart: Boolean, onClick: () -> Unit
             Modifier
                 .size(4.dp)
                 .clip(CircleShape)
-                .background(if (shuffle) LyraColors.Accent else Color.Transparent),
+                .background(dot),
         )
     }
 }
 
 @Composable
 private fun ToggleControl(icon: ImageVector, description: String, active: Boolean, onClick: () -> Unit) {
+    val tint by animateColorAsState(if (active) LyraColors.Accent else LyraColors.TextTertiary, label = "conmutador")
+    val dot by animateColorAsState(if (active) LyraColors.Accent else Color.Transparent, label = "punto")
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         IconButton(onClick = onClick) {
-            Icon(icon, description, tint = if (active) LyraColors.Accent else LyraColors.TextTertiary)
+            Icon(icon, description, tint = tint, modifier = Modifier.bounceOnChange(icon to active))
         }
         Box(
             Modifier
                 .size(4.dp)
                 .clip(CircleShape)
-                .background(if (active) LyraColors.Accent else Color.Transparent),
+                .background(dot),
         )
     }
 }

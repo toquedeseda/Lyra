@@ -91,6 +91,36 @@ class PublicMusicFolder(private val context: Context) {
 
     fun exists(location: String): Boolean = open(location)?.use { true } ?: false
 
+    /** Cambia el nombre del archivo a "Artista - Canción" (y título y artista en la biblioteca de Android). */
+    fun rename(location: String, song: Song): String? {
+        val current = displayName(location) ?: return null
+        val name = fileNameFor(song, current.substringAfterLast('.', "m4a"))
+        if (name == current) return location
+        if (location.startsWith("content://")) {
+            val values = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, name)
+                put(MediaStore.Audio.Media.TITLE, song.title)
+                put(MediaStore.Audio.Media.ARTIST, song.artistsText)
+            }
+            return runCatching { resolver.update(Uri.parse(location), values, null, null) }.getOrNull()?.let { location }
+        }
+        val file = File(location)
+        val target = uniqueFile(file.parentFile ?: return null, name)
+        if (!file.renameTo(target)) return null
+        MediaScannerConnection.scanFile(context, arrayOf(file.absolutePath, target.absolutePath), null, null)
+        return target.absolutePath
+    }
+
+    /** Sustituye el contenido del archivo (para corregir sus etiquetas). */
+    fun rewrite(location: String, data: ByteArray): Boolean = runCatching {
+        if (location.startsWith("content://")) {
+            resolver.openOutputStream(Uri.parse(location), "wt")?.use { it.write(data) } ?: return false
+        } else {
+            File(location).writeBytes(data)
+        }
+        true
+    }.getOrDefault(false)
+
     /**
      * Escribe (o reescribe) `Música/Lyra/Playlists/<nombre>.m3u8` con las
      * canciones indicadas; las rutas son relativas para que funcione también en el PC.

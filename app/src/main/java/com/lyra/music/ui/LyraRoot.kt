@@ -50,6 +50,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import com.lyra.music.ui.components.bounceOnChange
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Row
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.border
+import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.expandVertically
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -129,7 +142,8 @@ fun LyraRoot(container: AppContainer) {
     val downloads by container.downloads.states.collectAsState()
     val settings by container.settings.flow.collectAsState()
     val updateState by container.updates.state.collectAsState()
-    val libraryState = LibraryUiState(liked, downloads, playerState.song?.id, playerState.isPlaying)
+    val online by container.network.online.collectAsState()
+    val libraryState = LibraryUiState(liked, downloads, playerState.song?.id, playerState.isPlaying, online)
 
     // Eventos de fuera (notificación, isla, compartir enlaces…).
     LaunchedEffect(Unit) {
@@ -162,6 +176,10 @@ fun LyraRoot(container: AppContainer) {
             else -> Unit
         }
     }
+
+    // Si la última vez Lyra se cerró de golpe, se ofrece ver el informe.
+    var crash by remember { mutableStateOf<com.lyra.music.core.ErrorEntry?>(null) }
+    LaunchedEffect(Unit) { crash = com.lyra.music.core.ErrorLog.takePendingCrash() }
 
     // Actualizaciones al abrir y "Novedades" tras actualizar.
     var whatsNew by remember { mutableStateOf<Pair<String, String>?>(null) }
@@ -220,6 +238,7 @@ fun LyraRoot(container: AppContainer) {
                         composable<ArtistRoute> { ArtistScreen(it.toRoute<ArtistRoute>().id, padding) }
                         composable<PlaylistRoute> { RemotePlaylistScreen(it.toRoute<PlaylistRoute>().id, padding) }
                         composable<LocalPlaylistRoute> { LocalPlaylistScreen(it.toRoute<LocalPlaylistRoute>().id, padding) }
+                        composable<com.lyra.music.ui.navigation.ErrorsRoute> { com.lyra.music.ui.settings.ErrorsScreen(padding) }
                         composable<com.lyra.music.ui.navigation.FolderRoute> {
                             com.lyra.music.ui.library.FolderScreen(it.toRoute<com.lyra.music.ui.navigation.FolderRoute>().id, padding)
                         }
@@ -291,6 +310,28 @@ fun LyraRoot(container: AppContainer) {
                     else -> Unit
                 }
                 whatsNew?.let { (version, notes) -> WhatsNewDialog(version, notes, onDismiss = { whatsNew = null }) }
+                crash?.let {
+                    androidx.compose.material3.AlertDialog(
+                        onDismissRequest = { crash = null },
+                        containerColor = LyraColors.Surface,
+                        title = { Text("Lyra se cerró de golpe", style = MaterialTheme.typography.headlineMedium) },
+                        text = {
+                            Text(
+                                "Ha quedado apuntado en el informe de errores. Si lo copias y lo pasas, se puede arreglar.",
+                                color = LyraColors.TextSecondary,
+                            )
+                        },
+                        confirmButton = {
+                            androidx.compose.material3.TextButton(onClick = {
+                                crash = null
+                                nav.navigate(com.lyra.music.ui.navigation.ErrorsRoute)
+                            }) { Text("Ver informe", color = LyraColors.Accent) }
+                        },
+                        dismissButton = {
+                            androidx.compose.material3.TextButton(onClick = { crash = null }) { Text("Ahora no", color = LyraColors.TextSecondary) }
+                        },
+                    )
+                }
             }
         }
     }
@@ -311,6 +352,32 @@ private fun BottomBar(actions: LyraActions, shared: SharedTransitionScope) {
             ),
         ),
     ) {
+        val online by actions.container.network.online.collectAsState()
+        AnimatedVisibility(
+            visible = !online,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut(),
+        ) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                Row(
+                    Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(LyraColors.SurfaceHigh)
+                        .border(1.dp, LyraColors.Border, RoundedCornerShape(50))
+                        .padding(horizontal = 14.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Rounded.CloudOff, null, tint = LyraColors.TextSecondary, modifier = Modifier.size(15.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Sin conexión · suena lo descargado", style = MaterialTheme.typography.labelMedium, color = LyraColors.TextSecondary)
+                }
+            }
+        }
         MiniPlayer(sharedScope = shared)
         // Línea finísima sobre la barra, como en la web.
         Box(
@@ -331,7 +398,13 @@ private fun BottomBar(actions: LyraActions, shared: SharedTransitionScope) {
                             restoreState = true
                         }
                     },
-                    icon = { Icon(if (selected) tab.selectedIcon else tab.icon, tab.label) },
+                    icon = {
+                        Icon(
+                            if (selected) tab.selectedIcon else tab.icon,
+                            tab.label,
+                            modifier = Modifier.bounceOnChange(selected, onlyWhen = selected),
+                        )
+                    },
                     label = { Text(tab.label, style = MaterialTheme.typography.labelMedium) },
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = LyraColors.TextPrimary,

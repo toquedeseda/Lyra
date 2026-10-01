@@ -168,6 +168,7 @@ class UpdateRepository(
                 install(file)
             } catch (e: Exception) {
                 _state.value = UpdateState.Failed(e.message ?: "Error al actualizar", info)
+                com.lyra.music.core.ErrorLog.record("Actualización", e.message ?: "Error al actualizar", e, extra = "A la ${info.version}")
             }
         }
     }
@@ -244,6 +245,9 @@ class UpdateRepository(
                 )
             PackageInstaller.STATUS_FAILURE_STORAGE -> _state.value = UpdateState.Failed("No hay espacio suficiente", info)
             else -> _state.value = UpdateState.Failed(message ?: "La instalación falló", info)
+        }
+        (_state.value as? UpdateState.Failed)?.let { failed ->
+            com.lyra.music.core.ErrorLog.record("Actualización", failed.reason, extra = "Estado del instalador: $status")
         }
     }
 

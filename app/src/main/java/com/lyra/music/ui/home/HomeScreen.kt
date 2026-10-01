@@ -82,8 +82,14 @@ fun HomeScreen(contentPadding: PaddingValues) {
     var chipSections by remember { mutableStateOf<List<Section>?>(null) }
     var chipError by remember { mutableStateOf<String?>(null) }
     var refreshing by remember { mutableStateOf(false) }
+    val online by container.network.online.collectAsState()
 
-    LaunchedEffect(Unit) { container.home.refresh() }
+    // Al volver internet, el Inicio se pone al día.
+    LaunchedEffect(online) { if (online) container.home.refresh() }
+    if (!online) {
+        OfflineHome(contentPadding)
+        return
+    }
 
     fun selectChip(index: Int, chip: Chip?) {
         selectedChip = index

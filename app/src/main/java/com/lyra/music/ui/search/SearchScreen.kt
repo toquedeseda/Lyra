@@ -48,6 +48,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
@@ -199,6 +201,27 @@ class SearchViewModel(private val container: AppContainer) : ViewModel() {
 fun SearchScreen(contentPadding: PaddingValues) {
     val actions = LocalActions.current
     val vm: SearchViewModel = viewModel { SearchViewModel(actions.container) }
+    val online by actions.container.network.online.collectAsState()
+    if (!online) {
+        Column(Modifier.fillMaxSize().statusBarsPadding()) {
+            Text("Buscar", style = MaterialTheme.typography.displayMedium, modifier = Modifier.padding(start = 20.dp, top = 22.dp))
+            com.lyra.music.ui.components.EmptyView(
+                androidx.compose.material.icons.Icons.Rounded.CloudOff,
+                "Sin conexión",
+                "Para buscar en YouTube Music y SoundCloud hace falta internet. Mientras, busca en lo que tienes guardado.",
+                modifier = Modifier.padding(top = 16.dp),
+                action = "Buscar en mi biblioteca",
+                onAction = {
+                    actions.nav.navigate(com.lyra.music.ui.navigation.LibraryRoute) {
+                        popUpTo(actions.nav.graph.findStartDestination().id) { saveState = true }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                },
+            )
+        }
+        return
+    }
 
     // Búsqueda que llega desde la biblioteca («Buscarlo en Lyra»).
     LaunchedEffect(actions.pendingSearch) {

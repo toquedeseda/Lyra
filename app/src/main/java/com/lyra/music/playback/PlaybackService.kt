@@ -33,6 +33,7 @@ import com.lyra.music.LyraApp
 import com.lyra.music.MainActivity
 import com.lyra.music.R
 import com.lyra.music.data.model.Song
+import com.lyra.music.data.model.cleaned
 import com.lyra.music.data.settings.AppSettings
 import com.lyra.music.playback.MediaItems.toMediaItem
 import com.lyra.music.playback.MediaItems.toSong
@@ -249,7 +250,7 @@ class PlaybackService : MediaLibraryService() {
         val saved = queueStore.load() ?: return
         if (saved.songs.isEmpty()) return
         player.setMediaItems(
-            saved.songs.map { it.toMediaItem(container.downloads.localCover(it.id), recommended = it.id in saved.recommended) },
+            saved.songs.map { it.cleaned().toMediaItem(container.downloads.localCover(it.id), recommended = it.id in saved.recommended) },
             saved.index.coerceIn(0, saved.songs.size - 1),
             saved.positionMs,
         )
@@ -321,6 +322,18 @@ class PlaybackService : MediaLibraryService() {
 
         override fun onPlayerError(error: PlaybackException) {
             val songId = player.currentMediaItem?.mediaId ?: return
+            // Sin internet, lo que no está descargado no puede sonar: se salta sin reintentar.
+            if (!container.network.isOnline && !container.downloads.isDownloaded(songId)) {
+                retryCount = 0
+                if (player.hasNextMediaItem()) {
+                    scope.launch {
+                        player.seekToNextMediaItem()
+                        player.prepare()
+                        player.play()
+                    }
+                }
+                return
+            }
             val httpCode = (error.cause as? HttpDataSource.InvalidResponseCodeException)?.responseCode
             val recoverable = httpCode == 403 || httpCode == 410 ||
                 error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS ||
@@ -337,14 +350,24 @@ class PlaybackService : MediaLibraryService() {
                     player.prepare()
                     player.play()
                 }
-            } else if (player.hasNextMediaItem()) {
-                // Si una canción no se puede reproducir, se salta a la siguiente.
-                retryCount = 0
-                scope.launch {
-                    delay(800)
-                    player.seekToNextMediaItem()
-                    player.prepare()
-                    player.play()
+            } else {
+                // Ya no hay más intentos: se apunta en el informe de errores.
+                val song = player.currentMediaItem?.toSong()
+                com.lyra.music.core.ErrorLog.record(
+                    "Reproducción",
+                    "${song?.title ?: songId}: ${error.cause?.message ?: error.errorCodeName}",
+                    error,
+                    extra = "$songId · ${error.errorCodeName}",
+                )
+                if (player.hasNextMediaItem()) {
+                    // Si una canción no se puede reproducir, se salta a la siguiente.
+                    retryCount = 0
+                    scope.launch {
+                        delay(800)
+                        player.seekToNextMediaItem()
+                        player.prepare()
+                        player.play()
+                    }
                 }
             }
         }

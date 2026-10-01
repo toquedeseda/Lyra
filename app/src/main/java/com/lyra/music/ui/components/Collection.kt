@@ -29,6 +29,17 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.runtime.getValue
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
@@ -199,15 +210,14 @@ fun DownloadAllButton(songs: List<Song>, collectionTitle: String? = null) {
     val completed = states.count { it == DownloadState.COMPLETED }
     val pending = states.count { it == DownloadState.QUEUED || it == DownloadState.DOWNLOADING }
     val done = songs.isNotEmpty() && completed == songs.size
+    val fill by animateColorAsState(if (done) LyraColors.Accent else Color.Transparent, tween(300), label = "descargado")
     Box(
         Modifier
             .padding(end = 10.dp)
             .size(40.dp)
             .clip(CircleShape)
-            .then(
-                if (done) Modifier.background(LyraColors.Accent)
-                else Modifier.border(1.dp, LyraColors.Border, CircleShape),
-            )
+            .background(fill)
+            .border(1.dp, if (done) Color.Transparent else LyraColors.Border, CircleShape)
             .pressable(pressedScale = 0.9f) {
                 when {
                     songs.isEmpty() -> Unit
@@ -218,16 +228,31 @@ fun DownloadAllButton(songs: List<Song>, collectionTitle: String? = null) {
             },
         contentAlignment = Alignment.Center,
     ) {
-        when {
-            done -> Icon(Icons.Rounded.Check, "Descargado", tint = LyraColors.OnAccent, modifier = Modifier.size(20.dp))
-            pending > 0 -> CircularProgressIndicator(
-                progress = { completed.toFloat() / songs.size },
-                modifier = Modifier.size(22.dp),
-                color = LyraColors.Accent,
-                trackColor = LyraColors.SurfaceHigher,
-                strokeWidth = 2.5.dp,
-            )
-            else -> Icon(Icons.Rounded.ArrowDownward, "Descargar todo", tint = LyraColors.TextPrimary, modifier = Modifier.size(20.dp))
+        // La flecha da paso al progreso y, al acabar, la marca aparece con un rebote.
+        val phase = when {
+            done -> 2
+            pending > 0 -> 1
+            else -> 0
+        }
+        AnimatedContent(
+            targetState = phase,
+            transitionSpec = {
+                (scaleIn(initialScale = 0.3f, animationSpec = spring(dampingRatio = 0.42f)) + fadeIn()) togetherWith
+                    (scaleOut(targetScale = 0.3f) + fadeOut())
+            },
+            label = "descargar todo",
+        ) { current ->
+            when (current) {
+                2 -> Icon(Icons.Rounded.Check, "Descargado", tint = LyraColors.OnAccent, modifier = Modifier.size(20.dp))
+                1 -> CircularProgressIndicator(
+                    progress = { if (songs.isEmpty()) 0f else completed.toFloat() / songs.size },
+                    modifier = Modifier.size(22.dp),
+                    color = LyraColors.Accent,
+                    trackColor = LyraColors.SurfaceHigher,
+                    strokeWidth = 2.5.dp,
+                )
+                else -> Icon(Icons.Rounded.ArrowDownward, "Descargar todo", tint = LyraColors.TextPrimary, modifier = Modifier.size(20.dp))
+            }
         }
     }
 }

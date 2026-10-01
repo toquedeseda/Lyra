@@ -25,6 +25,7 @@ import com.lyra.music.data.model.ArtistRef
 import com.lyra.music.data.model.MusicItem
 import com.lyra.music.data.model.PlaylistItem
 import com.lyra.music.data.model.Song
+import com.lyra.music.data.model.cleaned
 import com.lyra.music.data.settings.SettingsRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -131,6 +132,9 @@ class LibraryRepository(
     // ------------------------------------------------------------- carpetas y portadas
 
     val folders: Flow<List<FolderSummary>> = folderDao.summaries()
+
+    /** Playlists con alguna canción descargada (para el Inicio sin conexión). */
+    val playlistDownloads: Flow<List<com.lyra.music.data.db.PlaylistDownloads>> = playlists.downloadCounts()
 
     fun folder(id: Long): Flow<PlaylistFolderEntity?> = folderDao.observe(id)
 
@@ -258,6 +262,17 @@ class LibraryRepository(
             .entries.sortedByDescending { it.value }
             .take(limit)
             .mapNotNull { entry -> topSongs(days, 100).flatMap { it.artists }.firstOrNull { (it.id ?: it.name) == entry.key } }
+
+    /** Limpia los títulos y artistas de las canciones guardadas; devuelve las que han cambiado. */
+    suspend fun cleanStoredTitles(): List<Song> = withContext(Dispatchers.IO) {
+        val changed = songs.all().mapNotNull { entity ->
+            val song = entity.toSong()
+            val clean = song.cleaned()
+            if (clean.title != song.title || clean.artists != song.artists) entity.copy(title = clean.title, artists = clean.artists) else null
+        }
+        if (changed.isNotEmpty()) songs.upsertAll(changed)
+        changed.map { it.toSong() }
+    }
 
     suspend fun searchLocal(query: String): List<Song> = songs.searchLocal(query, 20).map { it.toSong() }
 

@@ -48,9 +48,13 @@ data class AppSettings(
     val downloadQuality: AudioQuality = AudioQuality.HIGH,
     val downloadWifiOnly: Boolean = false,
     val autoDownloadLiked: Boolean = false,
+    /** Avisar de las descargas que no escuchas en estos meses (0 = nunca). */
+    val staleDownloadMonths: Int = 3,
     /** Descargas en la carpeta visible Música/Lyra (M4A con carátula) en vez de ocultas. */
     val downloadsVisible: Boolean = true,
     val folderMigrationDone: Boolean = false,
+    /** Ya se limpiaron los títulos de lo guardado antes de la 1.4 (y de sus archivos). */
+    val titlesCleaned: Boolean = false,
     // Isla
     val islandEnabled: Boolean = false,
     val islandMode: IslandMode = IslandMode.AUTO,
@@ -115,8 +119,10 @@ class SettingsRepository(context: Context, scope: CoroutineScope) {
         downloadQuality = enumOr(p[K.downloadQuality], AudioQuality.HIGH),
         downloadWifiOnly = p[K.wifiOnly] ?: false,
         autoDownloadLiked = p[K.autoDownloadLiked] ?: false,
+        staleDownloadMonths = p[K.staleMonths] ?: 3,
         downloadsVisible = p[K.downloadsVisible] ?: true,
         folderMigrationDone = p[K.folderMigrationDone] ?: false,
+        titlesCleaned = p[K.titlesCleaned] ?: false,
         islandEnabled = p[K.islandEnabled] ?: false,
         islandMode = enumOr(p[K.islandMode], IslandMode.AUTO),
         islandOffsetX = p[K.islandX] ?: 0,
@@ -148,8 +154,10 @@ class SettingsRepository(context: Context, scope: CoroutineScope) {
         p[K.downloadQuality] = s.downloadQuality.name
         p[K.wifiOnly] = s.downloadWifiOnly
         p[K.autoDownloadLiked] = s.autoDownloadLiked
+        p[K.staleMonths] = s.staleDownloadMonths
         p[K.downloadsVisible] = s.downloadsVisible
         p[K.folderMigrationDone] = s.folderMigrationDone
+        p[K.titlesCleaned] = s.titlesCleaned
         p[K.islandEnabled] = s.islandEnabled
         p[K.islandMode] = s.islandMode.name
         p[K.islandX] = s.islandOffsetX
@@ -189,6 +197,7 @@ class SettingsRepository(context: Context, scope: CoroutineScope) {
                 downloadQuality = enumOr(values["downloadQuality"], current.downloadQuality),
                 downloadWifiOnly = values["wifiOnly"]?.toBooleanStrictOrNull() ?: current.downloadWifiOnly,
                 autoDownloadLiked = values["autoDownloadLiked"]?.toBooleanStrictOrNull() ?: current.autoDownloadLiked,
+                staleDownloadMonths = values["staleMonths"]?.toIntOrNull() ?: current.staleDownloadMonths,
                 downloadsVisible = values["downloadsVisible"]?.toBooleanStrictOrNull() ?: current.downloadsVisible,
                 islandOffsetX = values["islandX"]?.toIntOrNull() ?: current.islandOffsetX,
                 islandOffsetY = values["islandY"]?.toIntOrNull() ?: current.islandOffsetY,
@@ -220,8 +229,10 @@ class SettingsRepository(context: Context, scope: CoroutineScope) {
         val downloadQuality = stringPreferencesKey("downloadQuality")
         val wifiOnly = booleanPreferencesKey("wifiOnly")
         val autoDownloadLiked = booleanPreferencesKey("autoDownloadLiked")
+        val staleMonths = intPreferencesKey("staleMonths")
         val downloadsVisible = booleanPreferencesKey("downloadsVisible")
         val folderMigrationDone = booleanPreferencesKey("folderMigrationDone")
+        val titlesCleaned = booleanPreferencesKey("titlesCleaned")
         val islandEnabled = booleanPreferencesKey("islandEnabled")
         val islandMode = stringPreferencesKey("islandMode")
         val islandX = intPreferencesKey("islandX")

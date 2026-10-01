@@ -268,18 +268,28 @@ fun ChipRow(labels: List<String>, selected: Int, onSelect: (Int) -> Unit, modifi
 /** Pastilla: oscura con texto gris, o color hueso cuando está elegida. */
 @Composable
 fun Pill(label: String, selected: Boolean = false, onClick: () -> Unit) {
+    val background by androidx.compose.animation.animateColorAsState(
+        if (selected) LyraColors.Accent else LyraColors.SurfaceHigh,
+        androidx.compose.animation.core.tween(220),
+        label = "píldora",
+    )
+    val content by androidx.compose.animation.animateColorAsState(
+        if (selected) LyraColors.OnAccent else LyraColors.TextSecondary,
+        androidx.compose.animation.core.tween(220),
+        label = "texto de la píldora",
+    )
     androidx.compose.foundation.layout.Box(
         Modifier
             .height(36.dp)
             .clip(androidx.compose.foundation.shape.RoundedCornerShape(50))
-            .background(if (selected) LyraColors.Accent else LyraColors.SurfaceHigh)
+            .background(background)
             .pressable(pressedScale = 0.94f, onClick = onClick)
             .padding(horizontal = 16.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             label,
-            color = if (selected) LyraColors.OnAccent else LyraColors.TextSecondary,
+            color = content,
             style = MaterialTheme.typography.labelLarge,
         )
     }

@@ -82,16 +82,37 @@ class LyraActions(
 
     // ---------------------------------------------------------------- reproducir
 
+    private val online get() = container.network.isOnline
+
+    /** Sin internet solo puede sonar lo descargado. */
+    private fun playable(songs: List<Song>): List<Song> =
+        if (online) songs else songs.filter { container.downloads.isDownloaded(it.id) }
+
     fun play(songs: List<Song>, index: Int = 0, from: MusicItem? = null, fromLabel: String? = null) {
         if (songs.isEmpty()) return
+        val target = songs.getOrNull(index)
+        val available = playable(songs)
+        if (target != null && target !in available) {
+            message("Sin conexión: esta canción no está descargada")
+            return
+        }
+        if (available.isEmpty()) {
+            message("Sin conexión y nada de esto está descargado")
+            return
+        }
         from?.let(container.library::noteContext)
-        player.play(songs, index, shuffle = false, from = fromLabel ?: from?.title)
+        player.play(available, available.indexOf(target).coerceAtLeast(0), shuffle = false, from = fromLabel ?: from?.title)
     }
 
     fun shuffle(songs: List<Song>, from: MusicItem? = null, fromLabel: String? = null) {
         if (songs.isEmpty()) return
+        val available = playable(songs)
+        if (available.isEmpty()) {
+            message("Sin conexión y nada de esto está descargado")
+            return
+        }
         from?.let(container.library::noteContext)
-        player.play(songs, 0, shuffle = true, from = fromLabel ?: from?.title)
+        player.play(available, 0, shuffle = true, from = fromLabel ?: from?.title)
     }
 
     /** Botón de aleatorio del reproductor: apagado → aleatorio → inteligente → apagado. */
@@ -114,7 +135,12 @@ class LyraActions(
     }
 
     fun startRadio(song: Song) {
-        player.startRadio(song)
+        when {
+            online -> player.startRadio(song)
+            // La radio necesita internet; sin él, suena la canción si está descargada.
+            container.downloads.isDownloaded(song.id) -> player.play(listOf(song), 0, shuffle = false, from = song.title)
+            else -> message("Sin conexión: esta canción no está descargada")
+        }
     }
 
     fun playNext(songs: List<Song>) {
@@ -284,6 +310,8 @@ data class LibraryUiState(
     val downloads: Map<String, com.lyra.music.data.db.DownloadEntity> = emptyMap(),
     val currentSongId: String? = null,
     val isPlaying: Boolean = false,
+    /** Con internet (si no, lo no descargado se ve apagado). */
+    val online: Boolean = true,
 )
 
 val LocalLibraryState = androidx.compose.runtime.compositionLocalOf { LibraryUiState() }

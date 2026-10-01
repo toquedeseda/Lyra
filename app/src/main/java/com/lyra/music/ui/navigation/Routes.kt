@@ -20,3 +20,4 @@ import kotlinx.serialization.Serializable
 @Serializable data object EqualizerRoute
 @Serializable data object IslandRoute
 @Serializable data class FolderRoute(val id: Long)
+@Serializable data object ErrorsRoute

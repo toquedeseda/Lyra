@@ -124,6 +124,7 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
             throw e
         } catch (e: Exception) {
             dao.setState(songId, DownloadState.FAILED, e.message ?: "Error al descargar")
+            com.lyra.music.core.ErrorLog.record("Descarga", "${song.title}: ${e.message ?: "error al descargar"}", e, extra = songId)
         }
     }
 

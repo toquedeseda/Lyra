@@ -1,5 +1,9 @@
 package com.lyra.music.data.download
 
+import kotlinx.coroutines.flow.first
+
+import com.lyra.music.data.db.StaleDownload
+
 import android.content.Context
 import android.net.Uri
 import androidx.work.Constraints
@@ -212,6 +216,46 @@ class DownloadRepository(
         hidden.forEach { dao.setState(it.songId, DownloadState.QUEUED) }
         if (hidden.isNotEmpty()) start()
         hidden.size
+    }
+
+    /** Descargas que no escuchas desde hace [months] meses (sin las de "Me gusta"). */
+    fun stale(months: Int): Flow<List<StaleDownload>> = dao.stale(staleCutoff(months))
+
+    suspend fun staleNow(months: Int): List<StaleDownload> = dao.stale(staleCutoff(months)).first()
+
+    private fun staleCutoff(months: Int) = System.currentTimeMillis() - months * 30L * 86_400_000L
+
+    /** Tras limpiar títulos: corrige etiquetas y nombre de las descargas visibles de esas canciones. */
+    suspend fun relabel(songs: List<Song>) = withContext(Dispatchers.IO) {
+        var changed = false
+        songs.forEach { song ->
+            val entity = dao.get(song.id) ?: return@forEach
+            val location = entity.filePath ?: return@forEach
+            // Las ocultas no tienen nombre legible ni etiquetas que corregir.
+            if (entity.state != DownloadState.COMPLETED || location.startsWith(directory.absolutePath)) return@forEach
+            val extension = folder.displayName(location)?.substringAfterLast('.', "")?.lowercase() ?: return@forEach
+            if (extension == "m4a" || extension == "mp3") {
+                runCatching {
+                    val bytes = folder.open(location)?.use { it.readBytes() } ?: return@runCatching
+                    val tags = AudioTags(
+                        title = song.title,
+                        artist = song.artistsText,
+                        album = song.album?.title,
+                        albumArtist = song.artists.firstOrNull()?.name,
+                        cover = entity.coverPath?.let(::File)?.takeIf { it.exists() }?.readBytes(),
+                    )
+                    val tagged = if (extension == "m4a") Mp4Tagger.tag(bytes, tags) else Id3Tagger.tag(bytes, tags)
+                    if (tagged != null) folder.rewrite(location, tagged)
+                }
+            }
+            val renamed = folder.rename(location, song)
+            if (renamed != null && renamed != location) {
+                dao.upsert(entity.copy(filePath = renamed))
+                locations[song.id] = renamed
+            }
+            changed = true
+        }
+        if (changed) writePlaylistExports()
     }
 
     /** Registra un archivo que ya existe (al restaurar una copia de seguridad). */

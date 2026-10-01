@@ -106,11 +106,11 @@ fun FolderCover(covers: List<String>, modifier: Modifier, shape: Shape = Rounded
 
 @UnstableApi
 @Composable
-fun FolderRow(folder: FolderSummary) {
+fun FolderRow(folder: FolderSummary, modifier: Modifier = Modifier) {
     val actions = LocalActions.current
     val covers by actions.container.library.folderCovers(folder.id).collectAsState(initial = emptyList())
     Row(
-        Modifier
+        modifier
             .fillMaxWidth()
             .pressable(pressedScale = 0.985f) { actions.nav.navigate(FolderRoute(folder.id)) }
             .padding(horizontal = 20.dp, vertical = 7.dp),
@@ -188,7 +188,7 @@ fun FolderScreen(id: Long, contentPadding: PaddingValues) {
                 )
             }
         }
-        items(inside, key = { it.id }) { PlaylistRow(it) }
+        items(inside, key = { it.id }) { PlaylistRow(it, Modifier.animateItem()) }
     }
 
     if (renaming) {

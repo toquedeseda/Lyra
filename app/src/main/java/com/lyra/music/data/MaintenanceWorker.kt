@@ -44,6 +44,15 @@ class MaintenanceWorker(context: Context, params: WorkerParameters) : CoroutineW
             }
         }
         val now = System.currentTimeMillis()
+        // Una vez al mes como mucho: descargas que llevas meses sin escuchar.
+        if (settings.staleDownloadMonths > 0 && now - prefs.getLong("cleanup_at", 0) > 30 * 86_400_000L) {
+            val stale = runCatching { container.downloads.staleNow(settings.staleDownloadMonths) }.getOrDefault(emptyList())
+            val bytes = stale.sumOf { it.totalBytes }
+            if (stale.size >= 5 || bytes >= 100L * 1024 * 1024) {
+                Notifier.cleanup(applicationContext, stale.size, bytes, settings.staleDownloadMonths)
+                prefs.edit().putLong("cleanup_at", now).apply()
+            }
+        }
         if (now - prefs.getLong("library_at", 0) > 11 * 3_600_000L) {
             checkReleases()
             runCatching { container.playlistSync.syncAll() }.getOrNull()?.forEach { result ->
@@ -85,12 +94,14 @@ object Notifier {
     const val CHANNEL_UPDATES = "updates"
     const val CHANNEL_RELEASES = "releases"
     const val CHANNEL_LIBRARY = "library"
+    const val CHANNEL_STORAGE = "storage"
 
     fun createChannels(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel(CHANNEL_UPDATES, "Actualizaciones", NotificationManager.IMPORTANCE_DEFAULT))
         manager.createNotificationChannel(NotificationChannel(CHANNEL_RELEASES, "Lanzamientos de tus artistas", NotificationManager.IMPORTANCE_DEFAULT))
         manager.createNotificationChannel(NotificationChannel(CHANNEL_LIBRARY, "Playlists sincronizadas", NotificationManager.IMPORTANCE_LOW))
+        manager.createNotificationChannel(NotificationChannel(CHANNEL_STORAGE, "Espacio de las descargas", NotificationManager.IMPORTANCE_LOW))
     }
 
     fun update(context: Context, info: UpdateInfo) {
@@ -125,6 +136,18 @@ object Notifier {
             .setContentIntent(activity(context, MainActivity.ACTION_OPEN_PLAYLIST, playlistId.toInt()) { putExtra(MainActivity.EXTRA_ID, playlistId.toString()) })
             .setAutoCancel(true)
         post(context, 7000 + playlistId.toInt(), builder)
+    }
+
+    fun cleanup(context: Context, count: Int, bytes: Long, months: Int) {
+        val size = if (bytes >= 1L shl 30) "%.1f GB".format(bytes / (1L shl 30).toDouble()) else "${bytes / (1L shl 20)} MB"
+        val period = if (months == 12) "un año" else "$months meses"
+        val builder = NotificationCompat.Builder(context, CHANNEL_STORAGE)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle("Puedes liberar $size")
+            .setContentText("$count descargas que no escuchas desde hace $period")
+            .setContentIntent(activity(context, MainActivity.ACTION_OPEN_DOWNLOADS, 12))
+            .setAutoCancel(true)
+        post(context, 8001, builder)
     }
 
     private fun activity(context: Context, action: String, code: Int, extras: Intent.() -> Unit = {}): PendingIntent =

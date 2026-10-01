@@ -235,8 +235,8 @@ fun LibraryScreen(contentPadding: PaddingValues) {
                 }
             }
             // Primero las carpetas y después las playlists que no están en ninguna.
-            items(folders, key = { "f${it.id}" }) { FolderRow(it) }
-            items(playlists.filter { it.folderId == null }, key = { "p${it.id}" }) { PlaylistRow(it) }
+            items(folders, key = { "f${it.id}" }) { FolderRow(it, Modifier.animateItem()) }
+            items(playlists.filter { it.folderId == null }, key = { "p${it.id}" }) { PlaylistRow(it, Modifier.animateItem()) }
         }
         if ((filter == 0 && albums.isNotEmpty()) || filter == 2) {
             item { SectionHeader("Álbumes") }
@@ -249,7 +249,7 @@ fun LibraryScreen(contentPadding: PaddingValues) {
                     )
                 }
             }
-            items(albums, key = { "a${it.id}" }) { album -> ItemRow(album) }
+            items(albums, key = { "a${it.id}" }) { album -> ItemRow(album, Modifier.animateItem()) }
         }
         if ((filter == 0 && artists.isNotEmpty()) || filter == 3) {
             item { SectionHeader("Artistas") }
@@ -262,7 +262,7 @@ fun LibraryScreen(contentPadding: PaddingValues) {
                     )
                 }
             }
-            items(artists, key = { "r${it.id}" }) { artist -> ItemRow(artist) }
+            items(artists, key = { "r${it.id}" }) { artist -> ItemRow(artist, Modifier.animateItem()) }
         }
     }
 
@@ -302,10 +302,10 @@ fun LibraryScreen(contentPadding: PaddingValues) {
 
 @UnstableApi
 @Composable
-fun PlaylistRow(playlist: PlaylistSummary) {
+fun PlaylistRow(playlist: PlaylistSummary, modifier: Modifier = Modifier) {
     val actions = LocalActions.current
     Row(
-        Modifier
+        modifier
             .fillMaxWidth()
             .pressable(pressedScale = 0.985f) { actions.nav.navigate(LocalPlaylistRoute(playlist.id)) }
             .padding(horizontal = 20.dp, vertical = 7.dp),
