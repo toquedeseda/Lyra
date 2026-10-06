@@ -16,12 +16,21 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lyra.music.R
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 
 /**
- * Paleta "Lira'": negro cálido, blanco hueso y grises cálidos. El único color
- * de toda la app es el rojo apagado del corazón de "Me gusta".
+ * Paleta "Lira'": negro cálido, blanco hueso y grises cálidos, y el rojo apagado del corazón de
+ * "Me gusta". El color de los botones y detalles ([Accent]) se puede cambiar en Ajustes → Aspecto.
  */
 object LyraColors {
+    private val accent = mutableStateOf(Color(0xFFE8E6DF))
+
+    /** Cambia el color de Lyra: todo lo que lo usa se repinta solo. */
+    fun setAccent(color: Color) {
+        accent.value = color
+    }
+
     val Background = Color(0xFF0A0A0B)
     val Surface = Color(0xFF141416)
     val SurfaceHigh = Color(0xFF1C1C1F)   // "elevated"
@@ -32,7 +41,7 @@ object LyraColors {
     val TextPrimary = Color(0xFFF3F3F1)
     val TextSecondary = Color(0xFF9C9C96) // "muted"
     val TextTertiary = Color(0xFF6E6E68)  // "subtle"
-    val Accent = Color(0xFFE8E6DF)        // blanco hueso
+    val Accent: Color get() = accent.value // blanco hueso, o el elegido
     val OnAccent = Color(0xFF0A0A0B)
     val Like = Color(0xFFC45C5C)
     val Error = Color(0xFFE6E4DD)
@@ -53,8 +62,8 @@ val InstrumentSerif = FontFamily(
     Font(R.font.instrument_serif_italic, FontWeight.Normal, FontStyle.Italic),
 )
 
-private val scheme = darkColorScheme(
-    primary = LyraColors.Accent,
+private fun scheme(accent: Color) = darkColorScheme(
+    primary = accent,
     onPrimary = LyraColors.OnAccent,
     primaryContainer = LyraColors.SurfaceHigh,
     onPrimaryContainer = LyraColors.TextPrimary,
@@ -78,7 +87,7 @@ private val scheme = darkColorScheme(
     outlineVariant = LyraColors.Border,
     error = LyraColors.Like,
     onError = LyraColors.TextPrimary,
-    inverseSurface = LyraColors.Accent,
+    inverseSurface = accent,
     inverseOnSurface = LyraColors.OnAccent,
     scrim = Color(0xCC000000),
 )
@@ -114,5 +123,7 @@ private val shapes = Shapes(
 
 @Composable
 fun LyraTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = scheme, typography = typography, shapes = shapes, content = content)
+    val accent = LyraColors.Accent
+    val colorScheme = remember(accent) { scheme(accent) }
+    MaterialTheme(colorScheme = colorScheme, typography = typography, shapes = shapes, content = content)
 }

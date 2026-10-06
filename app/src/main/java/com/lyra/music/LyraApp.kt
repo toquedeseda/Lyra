@@ -142,6 +142,7 @@ class LyraApp : Application(), SingletonImageLoader.Factory {
             container.settings.flow.collect {
                 container.innerTube.language = it.language
                 container.innerTube.region = it.region
+                com.lyra.music.ui.theme.LyraColors.setAccent(androidx.compose.ui.graphics.Color(it.accentColor.argb))
             }
         }
         // Si quedaron descargas a medias, se retoman.

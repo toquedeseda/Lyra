@@ -43,10 +43,6 @@
             android:launchMode="singleTask"
             android:theme="@style/Theme.Lyra.Splash"
             android:windowSoftInputMode="adjustResize">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
             <!-- Playlists compartidas desde Lyra: el enlace de la web se abre directamente aquí
                  (la web publica /.well-known/assetlinks.json con la firma de la app). -->
             <intent-filter android:autoVerify="true">
@@ -84,6 +80,69 @@
                 <action android:name="android.intent.action.MEDIA_BUTTON" />
             </intent-filter>
         </receiver>
+
+        <!-- Iconos a elegir (Ajustes → Aspecto → Icono de la app): cada uno es una entrada del cajón de
+             apps que abre MainActivity; solo una está encendida (ver AppIcons). -->
+        <activity-alias
+            android:name="com.lyra.music.IconoClasico"
+            android:targetActivity="com.lyra.music.MainActivity"
+            android:enabled="true"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:roundIcon="@mipmap/ic_launcher_round">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name="com.lyra.music.IconoHueso"
+            android:targetActivity="com.lyra.music.MainActivity"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_hueso"
+            android:roundIcon="@mipmap/ic_launcher_hueso_round">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name="com.lyra.music.IconoRojo"
+            android:targetActivity="com.lyra.music.MainActivity"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_rojo"
+            android:roundIcon="@mipmap/ic_launcher_rojo_round">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name="com.lyra.music.IconoNoche"
+            android:targetActivity="com.lyra.music.MainActivity"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_noche"
+            android:roundIcon="@mipmap/ic_launcher_noche_round">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name="com.lyra.music.IconoAtardecer"
+            android:targetActivity="com.lyra.music.MainActivity"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_atardecer"
+            android:roundIcon="@mipmap/ic_launcher_atardecer_round">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
 
         <!-- La isla junto a la cámara (servicio de accesibilidad) solo va en la versión completa:
              src/completa/AndroidManifest.xml -->

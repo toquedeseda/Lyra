@@ -71,6 +71,8 @@ data class AppSettings(
     val screenTransition: ScreenTransition = ScreenTransition.SMOOTH,
     /** Barritas bajo la portada y pulso con el bajo en el reproductor. */
     val visualizer: Boolean = true,
+    /** Color de los botones y detalles de toda la app. */
+    val accentColor: AccentColor = AccentColor.HUESO,
     // App
     val checkUpdates: Boolean = true,
     val lastSeenVersion: String = "",
@@ -139,6 +141,7 @@ class SettingsRepository(context: Context, scope: CoroutineScope) {
         showLyrics = p[K.showLyrics] ?: true,
         screenTransition = enumOr(p[K.screenTransition], ScreenTransition.SMOOTH),
         visualizer = p[K.visualizer] ?: true,
+        accentColor = enumOr(p[K.accentColor], AccentColor.HUESO),
         checkUpdates = p[K.checkUpdates] ?: true,
         lastSeenVersion = p[K.lastSeenVersion] ?: "",
         batteryTipDismissed = p[K.batteryTip] ?: false,
@@ -176,6 +179,7 @@ class SettingsRepository(context: Context, scope: CoroutineScope) {
         p[K.showLyrics] = s.showLyrics
         p[K.screenTransition] = s.screenTransition.name
         p[K.visualizer] = s.visualizer
+        p[K.accentColor] = s.accentColor.name
         p[K.checkUpdates] = s.checkUpdates
         p[K.lastSeenVersion] = s.lastSeenVersion
         p[K.batteryTip] = s.batteryTipDismissed
@@ -215,6 +219,7 @@ class SettingsRepository(context: Context, scope: CoroutineScope) {
                 showLyrics = values["showLyrics"]?.toBooleanStrictOrNull() ?: current.showLyrics,
                 screenTransition = enumOr(values["screenTransition"], current.screenTransition),
                 visualizer = values["visualizer"]?.toBooleanStrictOrNull() ?: current.visualizer,
+                accentColor = enumOr(values["accentColor"], current.accentColor),
             )
             write(prefs, restored)
         }
@@ -255,10 +260,25 @@ class SettingsRepository(context: Context, scope: CoroutineScope) {
         val showLyrics = booleanPreferencesKey("showLyrics")
         val screenTransition = stringPreferencesKey("screenTransition")
         val visualizer = booleanPreferencesKey("visualizer")
+        val accentColor = stringPreferencesKey("accentColor")
         val checkUpdates = booleanPreferencesKey("checkUpdates")
         val lastSeenVersion = stringPreferencesKey("lastSeenVersion")
         val batteryTip = booleanPreferencesKey("batteryTip")
     }
+}
+
+/**
+ * Color de Lyra (botones, interruptores, barras…). Tonos claros y suaves para que casen con el
+ * negro y los iconos oscuros encima se lean bien. El rojo del corazón de "Me gusta" no cambia.
+ */
+enum class AccentColor(val label: String, val argb: Long) {
+    HUESO("Blanco hueso", 0xFFE8E6DF),
+    CORAL("Coral", 0xFFEE8A78),
+    AMBAR("Ámbar", 0xFFF2C46D),
+    VERDE("Verde", 0xFF86D6AB),
+    AZUL("Azul", 0xFF8DB4F5),
+    MORADO("Morado", 0xFFB9A0F4),
+    ROSA("Rosa", 0xFFF4A3C8),
 }
 
 /** Animación al cambiar de pantalla. */

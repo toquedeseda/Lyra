@@ -82,6 +82,9 @@ fun SettingsScreen(contentPadding: PaddingValues) {
     var qualityDialog by remember { mutableStateOf<String?>(null) }
     var regionDialog by remember { mutableStateOf(false) }
     var transitionDialog by remember { mutableStateOf(false) }
+    var accentDialog by remember { mutableStateOf(false) }
+    var iconDialog by remember { mutableStateOf(false) }
+    var appIcon by remember { mutableStateOf(AppIcons.current(context)) }
     var confirmDownloads by remember { mutableStateOf(false) }
     var confirmHistory by remember { mutableStateOf(false) }
     var includeDownloads by remember { mutableStateOf(false) }
@@ -180,6 +183,8 @@ fun SettingsScreen(contentPadding: PaddingValues) {
             item { NavRow("Borrar todas las descargas", formatBytes(downloadBytes)) { confirmDownloads = true } }
 
             item { Group("Aspecto") }
+            item { NavRow("Color de Lyra", s.accentColor.label) { accentDialog = true } }
+            item { NavRow("Icono de la app", appIcon.label) { iconDialog = true } }
             item { NavRow("Animación entre pantallas", transitionLabel(s.screenTransition)) { transitionDialog = true } }
             item {
                 SwitchRow(
@@ -296,6 +301,23 @@ fun SettingsScreen(contentPadding: PaddingValues) {
             update { it.copy(staleDownloadMonths = options[index]) }
             staleDialog = false
         }
+    }
+    if (accentDialog) {
+        AccentDialog(
+            current = s.accentColor,
+            onPick = { color -> update { it.copy(accentColor = color) } },
+            onDismiss = { accentDialog = false },
+        )
+    }
+    if (iconDialog) {
+        AppIconDialog(
+            current = appIcon,
+            onPick = { icon ->
+                AppIcons.set(context, icon)
+                appIcon = icon
+            },
+            onDismiss = { iconDialog = false },
+        )
     }
     if (transitionDialog) {
         val options = ScreenTransition.entries
