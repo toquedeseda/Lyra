@@ -39,6 +39,9 @@ class StreamResolver(
     )
 
     private val memo = ConcurrentHashMap<String, Resolved>()
+
+    /** Canciones cuyo audio de YouTube (WebM) no se pudo leer: se piden en el formato de siempre (M4A). */
+    private val portableOnly = ConcurrentHashMap.newKeySet<String>()
     private val locks = ConcurrentHashMap<String, Mutex>()
 
     /** [hint]: título y artista, para buscar otra versión si YouTube no deja la original. */
@@ -48,7 +51,8 @@ class StreamResolver(
             memo[songId]?.takeIf { it.expiresAt > System.currentTimeMillis() + 60_000 }?.let { return@withLock it }
             // Si YouTube no deja sacar ese vídeo, se usa otra versión de la misma canción.
             val streams = alternatives.audioStreams(songId, hint)
-            val chosen = NewPipeSource.pick(streams, quality) ?: throw IOException("Esta canción no tiene audio disponible")
+            val chosen = NewPipeSource.pick(streams, quality, portable = songId in portableOnly)
+                ?: throw IOException("Esta canción no tiene audio disponible")
             val resolved = if (chosen.isHls) {
                 val file = File(cacheDir, "hls/${songId.replace(Regex("[^A-Za-z0-9._-]"), "_")}.${chosen.extension}")
                 if (!file.exists() || file.length() == 0L) HlsFetcher(http).download(chosen.url, file) { }
@@ -70,6 +74,13 @@ class StreamResolver(
 
     fun invalidate(songId: String) {
         memo.remove(songId)
+    }
+
+    /** La próxima vez se pide en M4A. Devuelve false si ya se había probado (para no repetir sin fin). */
+    fun preferPortable(songId: String): Boolean {
+        if (!portableOnly.add(songId)) return false
+        memo.remove(songId)
+        return true
     }
 
     private fun AudioStreamInfo.toResolved() = Resolved(

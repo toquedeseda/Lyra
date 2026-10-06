@@ -43,6 +43,7 @@ import com.lyra.music.ui.components.pressable
 import com.lyra.music.ui.navigation.DownloadsRoute
 import com.lyra.music.ui.navigation.LocalPlaylistRoute
 import com.lyra.music.ui.theme.LyraColors
+import com.lyra.music.core.plural
 
 /** Inicio sin internet: lo que tienes descargado, listo para sonar, en vez de errores. */
 @UnstableApi
@@ -138,7 +139,7 @@ private fun OfflinePlaylistRow(playlist: PlaylistDownloads) {
         Column {
             Text(playlist.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
-                if (playlist.downloaded == playlist.total) "Toda descargada · ${playlist.total} temas"
+                if (playlist.downloaded == playlist.total) "Toda descargada · ${plural(playlist.total, "tema", "temas")}"
                 else "${playlist.downloaded} de ${playlist.total} descargadas",
                 style = MaterialTheme.typography.bodySmall,
                 color = LyraColors.TextSecondary,

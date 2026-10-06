@@ -330,23 +330,28 @@ class PlaybackService : MediaLibraryService() {
             .build(),
     )
 
+    /**
+     * Recupera la cola de la última vez. Se lee y se prepara fuera del hilo de la pantalla (con
+     * colas de cientos de canciones retrasaba el arranque) y se pone solo si mientras tanto no
+     * ha empezado a sonar otra cosa.
+     */
     private fun restoreQueue() {
-        val saved = queueStore.load() ?: return
-        if (saved.songs.isEmpty()) return
-        player.setMediaItems(
-            saved.songs.map {
-                it.cleaned().toMediaItem(container.downloads.localCover(it.id), recommended = it.id in saved.recommended, radio = it.id in saved.radio)
-            },
-            saved.index.coerceIn(0, saved.songs.size - 1),
-            saved.positionMs,
-        )
-        player.shuffleModeEnabled = saved.shuffle
-        player.repeatMode = saved.repeatMode
-        shuffleState.value = saved.shuffle
-        repeatState.value = saved.repeatMode
-        contextLabel = saved.contextLabel
-        contextId = saved.contextId
-        player.prepare()
+        scope.launch {
+            val saved = withContext(Dispatchers.IO) { queueStore.load() }?.takeIf { it.songs.isNotEmpty() } ?: return@launch
+            val items = withContext(Dispatchers.Default) { savedItems(saved) }
+            if (player.mediaItemCount > 0) return@launch
+            player.setMediaItems(items, saved.index.coerceIn(0, items.size - 1), saved.positionMs)
+            player.shuffleModeEnabled = saved.shuffle
+            player.repeatMode = saved.repeatMode
+            shuffleState.value = saved.shuffle
+            repeatState.value = saved.repeatMode
+            setContext(saved.contextLabel, saved.contextId)
+            player.prepare()
+        }
+    }
+
+    private fun savedItems(saved: SavedQueue): List<MediaItem> = saved.songs.map {
+        it.cleaned().toMediaItem(container.downloads.localCover(it.id), recommended = it.id in saved.recommended, radio = it.id in saved.radio)
     }
 
     private fun rebuild(item: MediaItem): MediaItem {
@@ -468,6 +473,20 @@ class PlaybackService : MediaLibraryService() {
                         player.prepare()
                         player.play()
                     }
+                }
+                return
+            }
+            // A veces el audio de YouTube viene en un formato (WebM) que no se puede leer: antes se
+            // saltaba la canción. Ahora se borra lo que había en caché y se prueba una vez en M4A.
+            val badFormat = error.errorCode in UNREADABLE_FORMAT
+            if (badFormat && !container.downloads.isDownloaded(songId) && container.streamResolver.preferPortable(songId)) {
+                val position = player.currentPosition
+                runCatching { container.playerCache.removeResource(songId) }
+                scope.launch {
+                    delay(300)
+                    player.seekTo(player.currentMediaItemIndex, position)
+                    player.prepare()
+                    player.play()
                 }
                 return
             }
@@ -619,23 +638,16 @@ class PlaybackService : MediaLibraryService() {
             mediaSession: MediaSession,
             controller: MediaSession.ControllerInfo,
         ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
-            val saved = queueStore.load()
-            if (saved == null || saved.songs.isEmpty()) {
-                return Futures.immediateFailedFuture(UnsupportedOperationException("No hay nada que retomar"))
+            return scope.future {
+                val saved = withContext(Dispatchers.IO) { queueStore.load() }?.takeIf { it.songs.isNotEmpty() }
+                    ?: throw UnsupportedOperationException("No hay nada que retomar")
+                val items = withContext(Dispatchers.Default) { savedItems(saved) }
+                pendingShuffleStart = saved.shuffle
+                player.shuffleModeEnabled = saved.shuffle
+                player.repeatMode = saved.repeatMode
+                setContext(saved.contextLabel, saved.contextId)
+                MediaSession.MediaItemsWithStartPosition(items, saved.index, saved.positionMs)
             }
-            pendingShuffleStart = saved.shuffle
-            player.shuffleModeEnabled = saved.shuffle
-            player.repeatMode = saved.repeatMode
-            setContext(saved.contextLabel, saved.contextId)
-            return Futures.immediateFuture(
-                MediaSession.MediaItemsWithStartPosition(
-                    saved.songs.map {
-                        it.cleaned().toMediaItem(container.downloads.localCover(it.id), recommended = it.id in saved.recommended, radio = it.id in saved.radio)
-                    },
-                    saved.index,
-                    saved.positionMs,
-                ),
-            )
         }
 
         // ------------------------------------------------ Android Auto
@@ -705,6 +717,17 @@ class PlaybackService : MediaLibraryService() {
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession = session
+
+    private companion object {
+        /** Errores de "no se puede leer este audio" (formato roto o no compatible). */
+        val UNREADABLE_FORMAT = setOf(
+            PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED,
+            PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED,
+            PlaybackException.ERROR_CODE_DECODING_FAILED,
+            PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED,
+            PlaybackException.ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES,
+        )
+    }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         // Si no está sonando nada, al cerrar la app desde recientes se para el servicio.

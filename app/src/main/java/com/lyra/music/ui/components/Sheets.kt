@@ -63,6 +63,7 @@ import com.lyra.music.ui.LocalActions
 import com.lyra.music.ui.LocalLibraryState
 import com.lyra.music.ui.SongMenuRequest
 import com.lyra.music.ui.theme.LyraColors
+import com.lyra.music.core.plural
 
 @OptIn(ExperimentalMaterial3Api::class)
 @UnstableApi
@@ -184,7 +185,7 @@ fun AddToPlaylistSheet(songs: List<Song>, onDismiss: () -> Unit) {
                     Spacer(Modifier.width(14.dp))
                     Column {
                         Text(playlist.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
-                        Text("${playlist.songCount} canciones", style = MaterialTheme.typography.bodySmall, color = LyraColors.TextSecondary)
+                        Text(plural(playlist.songCount, "canción", "canciones"), style = MaterialTheme.typography.bodySmall, color = LyraColors.TextSecondary)
                     }
                 }
             }

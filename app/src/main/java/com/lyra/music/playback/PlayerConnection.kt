@@ -151,6 +151,20 @@ class PlayerConnection(
         }
     }
 
+    /**
+     * Lo que se pide por voz ("Ok Google, pon … en Lyra"). El servicio lo resuelve como en el
+     * coche: tus Me gusta, playlists y carpetas por su nombre, o lo mejor de YouTube Music.
+     */
+    fun playFromSearch(query: String, extras: Bundle?) = command { c ->
+        val request = MediaItem.RequestMetadata.Builder()
+            .setSearchQuery(query)
+            .setExtras(extras?.let { Bundle(it) })
+            .build()
+        c.setMediaItem(MediaItem.Builder().setRequestMetadata(request).build())
+        c.prepare()
+        c.play()
+    }
+
     fun playNext(songs: List<Song>) = command { c ->
         if (c.mediaItemCount == 0) {
             play(songs)

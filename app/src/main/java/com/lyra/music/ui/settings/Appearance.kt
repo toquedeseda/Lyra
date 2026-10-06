@@ -40,6 +40,8 @@ import androidx.core.graphics.drawable.toBitmap
 import com.lyra.music.R
 import com.lyra.music.data.settings.AccentColor
 import com.lyra.music.ui.theme.LyraColors
+import androidx.compose.ui.platform.LocalResources
+import androidx.core.content.res.ResourcesCompat
 
 /** Iconos de la app a elegir: cada uno es una entrada del cajón de apps; solo una está activa. */
 enum class AppIcon(val alias: String, val label: String, @DrawableRes val preview: Int) {
@@ -130,11 +132,13 @@ fun AccentDialog(current: AccentColor, onPick: (AccentColor) -> Unit, onDismiss:
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AppIconDialog(current: AppIcon, onPick: (AppIcon) -> Unit, onDismiss: () -> Unit) {
-    val context = LocalContext.current
+    val resources = LocalResources.current
     val sizePx = with(LocalDensity.current) { 56.dp.roundToPx() }
     // El icono tal como lo dibuja el móvil (con la forma de sus iconos).
-    val previews = remember(sizePx) {
-        AppIcon.entries.associateWith { icon -> context.getDrawable(icon.preview)?.toBitmap(sizePx, sizePx)?.asImageBitmap() }
+    val previews = remember(resources, sizePx) {
+        AppIcon.entries.associateWith { icon ->
+            ResourcesCompat.getDrawable(resources, icon.preview, null)?.toBitmap(sizePx, sizePx)?.asImageBitmap()
+        }
     }
     AlertDialog(
         onDismissRequest = onDismiss,

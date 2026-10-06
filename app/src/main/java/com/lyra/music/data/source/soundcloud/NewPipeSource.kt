@@ -30,6 +30,7 @@ import org.schabi.newpipe.extractor.stream.AudioTrackType
 import org.schabi.newpipe.extractor.stream.DeliveryMethod
 import org.schabi.newpipe.extractor.stream.StreamInfo
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
+import com.lyra.music.core.plural
 
 /** Una pista de audio concreta lista para reproducir o descargar. */
 data class AudioStreamInfo(
@@ -139,7 +140,7 @@ class NewPipeSource(client: OkHttpClient) {
                 title = info.name,
                 author = info.uploaderName,
                 thumbnailUrl = bestImage(info.thumbnails),
-                songCountText = "${songs.size} canciones",
+                songCountText = plural(songs.size, "canción", "canciones"),
             ),
             songs = songs,
             description = info.description?.content?.takeIf { it.isNotBlank() },

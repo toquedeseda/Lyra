@@ -30,6 +30,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
+import com.lyra.music.data.repo.LibraryStats
+import com.lyra.music.core.plural
 
 /**
  * Lyra en Android Auto, al estilo de Spotify: cuatro pestañas (Inicio, Recientes,
@@ -141,7 +143,11 @@ class AutoLibrary(private val context: Context) {
         items += browsable(LIKED, LIKED_TITLE, plural(c.library.likedIds.value.size, "canción", "canciones"), icon = "liked")
         val downloaded = runCatching { c.database.downloads().completed().size }.getOrDefault(0)
         items += browsable(DOWNLOADS, DOWNLOADS_TITLE, plural(downloaded, "canción", "canciones"), icon = "downloads")
-        c.library.folders.first().forEach { folder ->
+        // En el mismo orden que la biblioteca del móvil (por defecto, lo último que escuchaste arriba).
+        val sort = c.settings.current.librarySort
+        val stats = runCatching { c.library.libraryStats() }.getOrElse { LibraryStats() }
+        val playlists = c.library.playlistSummaries.first()
+        stats.folders(c.library.folders.first(), playlists, sort).forEach { folder ->
             val id = "$FOLDER${folder.id}"
             labels[id] = folder.name
             items += browsable(
@@ -150,9 +156,9 @@ class AutoLibrary(private val context: Context) {
                 extras = style(browsable = LIST, playable = LIST),
             )
         }
-        c.library.playlistSummaries.first().filter { it.folderId == null }.forEach { items += playlistNode(it, "Playlists") }
-        c.library.savedAlbums.first().forEach { node(it, group = "Álbumes")?.let(items::add) }
-        c.library.followedArtists.first().forEach { node(it, group = "Artistas")?.let(items::add) }
+        stats.playlists(playlists.filter { it.folderId == null }, sort).forEach { items += playlistNode(it, "Playlists") }
+        stats.albums(c.library.savedAlbums.first(), sort).forEach { node(it, group = "Álbumes")?.let(items::add) }
+        stats.artists(c.library.followedArtists.first(), sort).forEach { node(it, group = "Artistas")?.let(items::add) }
         return items
     }
 
@@ -640,7 +646,6 @@ class AutoLibrary(private val context: Context) {
         playable?.let { putInt(MediaConstants.EXTRAS_KEY_CONTENT_STYLE_PLAYABLE, it) }
     }
 
-    private fun plural(n: Int, one: String, many: String) = if (n == 1) "1 $one" else "$n $many"
 
     companion object {
         const val ROOT = "root"

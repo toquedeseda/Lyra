@@ -210,6 +210,36 @@ class LibraryRepository(
     val savedAlbums: Flow<List<AlbumItem>> = library.albums().map { list -> list.map { it.toItem() } }
     val followedArtists: Flow<List<ArtistItem>> = library.artists().map { list -> list.map { it.toItem() } }
 
+    /** Lo último calculado, para que al volver a la biblioteca salga ya en su orden. */
+    @Volatile
+    var cachedStats: LibraryStats? = null
+        private set
+
+    /** Para ordenar la biblioteca por lo último escuchado o lo más escuchado. */
+    suspend fun libraryStats(): LibraryStats = withContext(Dispatchers.IO) {
+        val followed = library.artistList()
+        val byId = followed.associateBy { it.id }
+        val byName = followed.associateBy { it.name.trim().lowercase() }
+        val artistPlays = HashMap<String, PlayStat>()
+        songs.artistPlays().forEach { row ->
+            row.artists
+                .mapNotNull { a -> (a.id?.let(byId::get) ?: byName[a.name.trim().lowercase()])?.id }
+                .distinct()
+                .forEach { id ->
+                    val old = artistPlays[id] ?: PlayStat(0)
+                    artistPlays[id] = old.copy(lastPlayed = maxOf(old.lastPlayed, row.lastPlayed ?: 0), plays = old.plays + row.plays)
+                }
+        }
+        LibraryStats(
+            playlists = playlists.stats().associate { it.id to PlayStat(it.added, it.lastPlayed ?: 0, it.plays) },
+            albums = library.albumStats().associate { it.id to PlayStat(it.added, it.lastPlayed ?: 0, it.plays) },
+            artists = followed.associate { a ->
+                val played = artistPlays[a.id]
+                a.id to PlayStat(a.followedAt, played?.lastPlayed ?: 0, played?.plays ?: 0)
+            },
+        ).also { cachedStats = it }
+    }
+
     fun isAlbumSaved(id: String): Flow<Boolean> = library.isAlbumSaved(id)
     fun isFollowing(id: String): Flow<Boolean> = library.isFollowing(id)
 

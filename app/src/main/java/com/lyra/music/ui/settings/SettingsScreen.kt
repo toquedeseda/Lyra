@@ -66,6 +66,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import com.lyra.music.data.settings.ScreenTransition
+import com.lyra.music.core.plural
 
 @UnstableApi
 @Composable
@@ -96,7 +97,8 @@ fun SettingsScreen(contentPadding: PaddingValues) {
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         if (uri != null) actions.launch {
             runCatching { container.backup.export(uri, includeDownloads) }
-                .onSuccess { actions.message("Copia guardada: ${it.songs} canciones, ${it.playlists} playlists" + if (includeDownloads) ", ${it.downloads} descargas" else "") }
+                .onSuccess { actions.message("Copia guardada: ${plural(it.songs, "canción", "canciones")}, ${plural(it.playlists, "playlist", "playlists")}" +
+                    if (includeDownloads) ", ${plural(it.downloads, "descarga", "descargas")}" else "") }
                 .onFailure { actions.message("No se pudo exportar: ${it.message}") }
         }
     }

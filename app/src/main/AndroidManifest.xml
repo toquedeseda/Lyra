@@ -54,6 +54,11 @@
                     android:host="lyra.shopxcenter.duckdns.org"
                     android:pathPrefix="/p" />
             </intent-filter>
+            <!-- "Ok Google, pon … en Lyra" con el móvil (en el coche va por la sesión de música) -->
+            <intent-filter>
+                <action android:name="android.media.action.MEDIA_PLAY_FROM_SEARCH" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
             <!-- "Compartir → Lyra" desde YouTube, YouTube Music o SoundCloud -->
             <intent-filter android:label="@string/share_label">
                 <action android:name="android.intent.action.SEND" />

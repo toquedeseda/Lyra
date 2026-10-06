@@ -129,6 +129,7 @@ import com.lyra.music.ui.components.exitFor
 import com.lyra.music.ui.components.popEnterFor
 import com.lyra.music.ui.components.popExitFor
 import androidx.compose.runtime.withFrameNanos
+import com.lyra.music.core.plural
 
 private data class Tab(val route: Any, val label: String, val icon: ImageVector, val selectedIcon: ImageVector)
 
@@ -181,7 +182,7 @@ fun LyraRoot(container: AppContainer) {
         when (val s = importState) {
             is com.lyra.music.data.repo.ImportState.Done -> {
                 container.spotifyImport.dismiss()
-                actions.message("«${s.name}» importada · ${s.found} canciones", "Abrir") { nav.navigate(LocalPlaylistRoute(s.playlistId)) }
+                actions.message("«${s.name}» importada · ${plural(s.found, "canción", "canciones")}", "Abrir") { nav.navigate(LocalPlaylistRoute(s.playlistId)) }
             }
             is com.lyra.music.data.repo.ImportState.Failed -> {
                 container.spotifyImport.dismiss()

@@ -15,6 +15,8 @@ import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.media3.common.util.UnstableApi
 import com.lyra.music.ui.LyraRoot
 import com.lyra.music.ui.theme.LyraTheme
+import android.app.SearchManager
+import android.provider.MediaStore
 
 @UnstableApi
 class MainActivity : ComponentActivity() {
@@ -67,6 +69,9 @@ class MainActivity : ComponentActivity() {
                 Regex("https?://\\S+").find(text)?.value?.let { container.send(AppEvent.OpenLink(it)) }
             }
             Intent.ACTION_VIEW -> intent.dataString?.let { container.send(AppEvent.OpenLink(it)) }
+            // "Ok Google, pon … en Lyra": lo resuelve el servicio igual que la voz del coche.
+            MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH ->
+                container.player.playFromSearch(intent.getStringExtra(SearchManager.QUERY).orEmpty(), intent.extras)
         }
     }
 

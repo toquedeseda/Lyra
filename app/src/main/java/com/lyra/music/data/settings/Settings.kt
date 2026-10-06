@@ -66,6 +66,8 @@ data class AppSettings(
     val language: String = "es",
     val region: String = "ES",
     val showLyrics: Boolean = true,
+    /** Orden de la biblioteca (playlists, carpetas, álbumes y artistas). */
+    val librarySort: LibrarySort = LibrarySort.RECENT,
     // Aspecto
     /** Cómo se pasa de una pantalla a otra (se elige en Ajustes). */
     val screenTransition: ScreenTransition = ScreenTransition.SMOOTH,
@@ -139,6 +141,7 @@ class SettingsRepository(context: Context, scope: CoroutineScope) {
         language = p[K.language] ?: "es",
         region = p[K.region] ?: "ES",
         showLyrics = p[K.showLyrics] ?: true,
+        librarySort = enumOr(p[K.librarySort], LibrarySort.RECENT),
         screenTransition = enumOr(p[K.screenTransition], ScreenTransition.SMOOTH),
         visualizer = p[K.visualizer] ?: true,
         accentColor = enumOr(p[K.accentColor], AccentColor.HUESO),
@@ -177,6 +180,7 @@ class SettingsRepository(context: Context, scope: CoroutineScope) {
         p[K.language] = s.language
         p[K.region] = s.region
         p[K.showLyrics] = s.showLyrics
+        p[K.librarySort] = s.librarySort.name
         p[K.screenTransition] = s.screenTransition.name
         p[K.visualizer] = s.visualizer
         p[K.accentColor] = s.accentColor.name
@@ -217,6 +221,7 @@ class SettingsRepository(context: Context, scope: CoroutineScope) {
                 islandWidth = values["islandWidth"]?.toIntOrNull() ?: current.islandWidth,
                 islandHeight = values["islandHeight"]?.toIntOrNull() ?: current.islandHeight,
                 showLyrics = values["showLyrics"]?.toBooleanStrictOrNull() ?: current.showLyrics,
+                librarySort = enumOr(values["librarySort"], current.librarySort),
                 screenTransition = enumOr(values["screenTransition"], current.screenTransition),
                 visualizer = values["visualizer"]?.toBooleanStrictOrNull() ?: current.visualizer,
                 accentColor = enumOr(values["accentColor"], current.accentColor),
@@ -258,6 +263,7 @@ class SettingsRepository(context: Context, scope: CoroutineScope) {
         val language = stringPreferencesKey("language")
         val region = stringPreferencesKey("region")
         val showLyrics = booleanPreferencesKey("showLyrics")
+        val librarySort = stringPreferencesKey("librarySort")
         val screenTransition = stringPreferencesKey("screenTransition")
         val visualizer = booleanPreferencesKey("visualizer")
         val accentColor = stringPreferencesKey("accentColor")
@@ -279,6 +285,15 @@ enum class AccentColor(val label: String, val argb: Long) {
     AZUL("Azul", 0xFF8DB4F5),
     MORADO("Morado", 0xFFB9A0F4),
     ROSA("Rosa", 0xFFF4A3C8),
+}
+
+/** Cómo se ordena la biblioteca. */
+enum class LibrarySort(val label: String) {
+    /** Lo último que escuchaste (o guardaste, o cambiaste) arriba, como en Spotify. */
+    RECENT("Recientes"),
+    PLAYS("Más escuchadas"),
+    NAME("Nombre"),
+    ADDED("Añadidas hace poco"),
 }
 
 /** Animación al cambiar de pantalla. */

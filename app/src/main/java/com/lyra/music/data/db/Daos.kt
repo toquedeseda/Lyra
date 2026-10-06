@@ -22,6 +22,9 @@ interface SongDao {
     @Query("SELECT * FROM songs WHERE id = :id")
     suspend fun get(id: String): SongEntity?
 
+    @Query("SELECT artists, playCount AS plays, lastPlayedAt AS lastPlayed FROM songs WHERE playCount > 0")
+    suspend fun artistPlays(): List<ArtistPlaysRow>
+
     @Query("SELECT * FROM songs WHERE id IN (:ids)")
     suspend fun getAll(ids: List<String>): List<SongEntity>
 
@@ -152,6 +155,13 @@ interface PlaylistDao {
     )
     fun summaries(): Flow<List<PlaylistSummary>>
 
+    @Query(
+        """SELECT p.id, p.createdAt AS added, MAX(s.lastPlayedAt) AS lastPlayed, COALESCE(SUM(s.playCount), 0) AS plays
+           FROM playlists p LEFT JOIN playlist_songs ps ON ps.playlistId = p.id LEFT JOIN songs s ON s.id = ps.songId
+           GROUP BY p.id""",
+    )
+    suspend fun stats(): List<PlaylistStatRow>
+
     @Query("SELECT * FROM playlists WHERE id = :id")
     fun observe(id: Long): Flow<PlaylistEntity?>
 
@@ -276,6 +286,15 @@ interface LibraryDao {
 
     @Query("SELECT * FROM followed_artists")
     suspend fun artistList(): List<FollowedArtistEntity>
+
+    /** Las canciones de cada álbum guardado; las que no traen álbum se buscan por su título. */
+    @Query(
+        """SELECT a.id, a.savedAt AS added, MAX(s.lastPlayedAt) AS lastPlayed, COALESCE(SUM(s.playCount), 0) AS plays
+           FROM saved_albums a LEFT JOIN songs s
+             ON s.albumId = a.id OR (s.albumId IS NULL AND s.albumTitle = a.title COLLATE NOCASE)
+           GROUP BY a.id""",
+    )
+    suspend fun albumStats(): List<AlbumStatRow>
 
     @Query("SELECT EXISTS(SELECT 1 FROM followed_artists WHERE id = :id)")
     fun isFollowing(id: String): Flow<Boolean>

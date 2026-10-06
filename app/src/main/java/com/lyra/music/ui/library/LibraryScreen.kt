@@ -73,6 +73,11 @@ import com.lyra.music.ui.components.CoverFlight
 import com.lyra.music.ui.components.flyingCover
 import com.lyra.music.ui.components.rememberCoverTag
 import com.lyra.music.data.repo.localPlaylistId
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.SwapVert
+import com.lyra.music.data.repo.LibraryStats
+import com.lyra.music.data.settings.LibrarySort
+import com.lyra.music.core.plural
 
 @UnstableApi
 @Composable
@@ -84,6 +89,15 @@ fun LibraryScreen(contentPadding: PaddingValues) {
     val albums by library.savedAlbums.collectAsState(initial = emptyList())
     val artists by library.followedArtists.collectAsState(initial = emptyList())
     val liked by library.likedIds.collectAsState()
+    val sort = actions.container.settings.flow.collectAsState().value.librarySort
+    // Se recalcula al entrar y cuando cambia algo; mientras, el orden de la última vez.
+    val stats by produceState(library.cachedStats ?: LibraryStats(), playlists, folders, albums, artists) {
+        value = library.libraryStats()
+    }
+    val sortedFolders = remember(folders, playlists, stats, sort) { stats.folders(folders, playlists, sort) }
+    val sortedPlaylists = remember(playlists, stats, sort) { stats.playlists(playlists.filter { it.folderId == null }, sort) }
+    val sortedAlbums = remember(albums, stats, sort) { stats.albums(albums, sort) }
+    val sortedArtists = remember(artists, stats, sort) { stats.artists(artists, sort) }
     val downloads by actions.container.downloads.states.collectAsState()
     val completedDownloads = downloads.values.count { it.state == DownloadState.COMPLETED }
 
@@ -213,15 +227,20 @@ fun LibraryScreen(contentPadding: PaddingValues) {
 
         item {
             Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                PinnedCard(Icons.Rounded.Favorite, true, "Canciones que te gustan", "${liked.size} temas") {
+                PinnedCard(Icons.Rounded.Favorite, true, "Canciones que te gustan", plural(liked.size, "tema", "temas")) {
                     actions.nav.navigate(LikedRoute)
                 }
-                PinnedCard(Icons.Rounded.ArrowDownward, false, "Descargas", "$completedDownloads temas sin conexión") {
+                PinnedCard(Icons.Rounded.ArrowDownward, false, "Descargas", plural(completedDownloads, "tema", "temas") + " sin conexión") {
                     actions.nav.navigate(DownloadsRoute)
                 }
             }
         }
         item { ChipRow(filters, filter, { filter = it }, Modifier.padding(top = 22.dp)) }
+        item {
+            SortButton(sort) { option ->
+                actions.launch { actions.container.settings.update { it.copy(librarySort = option) } }
+            }
+        }
 
         if (showPlaylists) {
             item { SectionHeader("Tus listas") }
@@ -239,8 +258,8 @@ fun LibraryScreen(contentPadding: PaddingValues) {
                 }
             }
             // Primero las carpetas y después las playlists que no están en ninguna.
-            items(folders, key = { "f${it.id}" }) { FolderRow(it, Modifier.animateItem()) }
-            items(playlists.filter { it.folderId == null }, key = { "p${it.id}" }) { PlaylistRow(it, Modifier.animateItem()) }
+            items(sortedFolders, key = { "f${it.id}" }) { FolderRow(it, Modifier.animateItem()) }
+            items(sortedPlaylists, key = { "p${it.id}" }) { PlaylistRow(it, Modifier.animateItem()) }
         }
         if ((filter == 0 && albums.isNotEmpty()) || filter == 2) {
             item { SectionHeader("Álbumes") }
@@ -253,7 +272,7 @@ fun LibraryScreen(contentPadding: PaddingValues) {
                     )
                 }
             }
-            items(albums, key = { "a${it.id}" }) { album -> ItemRow(album, Modifier.animateItem()) }
+            items(sortedAlbums, key = { "a${it.id}" }) { album -> ItemRow(album, Modifier.animateItem()) }
         }
         if ((filter == 0 && artists.isNotEmpty()) || filter == 3) {
             item { SectionHeader("Artistas") }
@@ -266,7 +285,7 @@ fun LibraryScreen(contentPadding: PaddingValues) {
                     )
                 }
             }
-            items(artists, key = { "r${it.id}" }) { artist -> ItemRow(artist, Modifier.animateItem()) }
+            items(sortedArtists, key = { "r${it.id}" }) { artist -> ItemRow(artist, Modifier.animateItem()) }
         }
     }
 
@@ -329,12 +348,50 @@ fun PlaylistRow(playlist: PlaylistSummary, modifier: Modifier = Modifier) {
                 else -> ""
             }
             Text(
-                "Playlist · ${playlist.songCount} temas$origin" + if (playlist.syncEnabled) " · Sincronizada" else "",
+                "Playlist · ${plural(playlist.songCount, "tema", "temas")}$origin" + if (playlist.syncEnabled) " · Sincronizada" else "",
                 style = MaterialTheme.typography.bodySmall,
                 color = LyraColors.TextSecondary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+        }
+    }
+}
+
+/** «⇅ Recientes»: cambia el orden de la biblioteca (se recuerda). */
+@Composable
+private fun SortButton(sort: LibrarySort, onPick: (LibrarySort) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box(Modifier.padding(start = 10.dp, top = 12.dp)) {
+        Row(
+            Modifier
+                .clip(RoundedCornerShape(50))
+                .pressable { open = true }
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Rounded.SwapVert, null, tint = LyraColors.TextSecondary, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(sort.label, style = MaterialTheme.typography.labelLarge, color = LyraColors.TextPrimary)
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }, containerColor = LyraColors.SurfaceHigh) {
+            Text(
+                "Ordenar por",
+                style = MaterialTheme.typography.bodySmall,
+                color = LyraColors.TextSecondary,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+            LibrarySort.entries.forEach { option ->
+                val selected = option == sort
+                DropdownMenuItem(
+                    text = { Text(option.label, color = if (selected) LyraColors.Accent else LyraColors.TextPrimary) },
+                    trailingIcon = { if (selected) Icon(Icons.Rounded.Check, null, tint = LyraColors.Accent, modifier = Modifier.size(18.dp)) },
+                    onClick = {
+                        open = false
+                        if (!selected) onPick(option)
+                    },
+                )
+            }
         }
     }
 }

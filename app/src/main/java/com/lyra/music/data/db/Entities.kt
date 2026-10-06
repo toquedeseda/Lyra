@@ -254,6 +254,14 @@ data class PlaylistSummary(
 
 data class PlayCount(val songId: String, val plays: Int, val totalMs: Long)
 
+/** Para ordenar la biblioteca: cuándo se guardó, cuándo se escuchó por última vez y cuántas veces. */
+data class PlaylistStatRow(val id: Long, val added: Long, val lastPlayed: Long?, val plays: Int)
+
+data class AlbumStatRow(val id: String, val added: Long, val lastPlayed: Long?, val plays: Int)
+
+/** Una canción escuchada y sus artistas (para saber cuánto escuchas a cada artista que sigues). */
+data class ArtistPlaysRow(val artists: List<ArtistRef>, val plays: Int, val lastPlayed: Long?)
+
 class Converters {
     private val json: Json = Json { ignoreUnknownKeys = true }
 

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Lyra usa a propósito partes de Media3 marcadas como «inestables» (el reproductor, la sesión y
+     Android Auto): se aceptan para toda la app, como recomienda la documentación de Media3. -->
+<lint>
+    <issue id="UnsafeOptInUsageError">
+        <option name="opt-in" value="androidx.media3.common.util.UnstableApi" />
+    </issue>
+    <!-- El servicio de música tiene que estar abierto a Android Auto y a los mandos del sistema. -->
+    <issue id="ExportedService" severity="ignore" />
+</lint>

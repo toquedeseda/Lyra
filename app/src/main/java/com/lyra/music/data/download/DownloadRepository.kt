@@ -81,10 +81,8 @@ class DownloadRepository(
         scope.launch {
             states.collect { map ->
                 // También las que se están volviendo a descargar: siguen sonando hasta que llega la nueva.
-                index = Index(
-                    map.values.mapNotNull { e -> e.filePath?.let { e.songId to it } }.toMap(),
-                    map.values.mapNotNull { e -> e.coverPath?.let { e.songId to it } }.toMap(),
-                )
+                // Se mira el disco aquí, fuera del hilo de la pantalla, y no en cada fila de las listas.
+                index = withContext(Dispatchers.IO) { buildIndex(map.values) }
                 locations.clear()
                 removed.clear()
                 indexLoaded = true
@@ -94,15 +92,21 @@ class DownloadRepository(
 
     private fun ensureIndex() {
         if (indexLoaded) return
-        val completed = runBlocking(Dispatchers.IO) { dao.completed() }
+        val built = runBlocking(Dispatchers.IO) { buildIndex(dao.completed()) }
         if (!indexLoaded) {
-            index = Index(
-                completed.mapNotNull { e -> e.filePath?.let { e.songId to it } }.toMap(),
-                completed.mapNotNull { e -> e.coverPath?.let { e.songId to it } }.toMap(),
-            )
+            index = built
             indexLoaded = true
         }
     }
+
+    /** Índice de lo descargado, solo con los archivos que siguen en el disco. */
+    private fun buildIndex(entries: Collection<DownloadEntity>) = Index(
+        entries.mapNotNull { e -> e.filePath?.takeIf(::fileExists)?.let { e.songId to it } }.toMap(),
+        entries.mapNotNull { e -> e.coverPath?.takeIf { File(it).exists() }?.let { e.songId to it } }.toMap(),
+    )
+
+    private fun fileExists(location: String) =
+        location.startsWith("content://") || File(location).let { it.exists() && it.length() > 0 }
 
     private fun locationOf(songId: String): String? {
         ensureIndex()
@@ -114,13 +118,14 @@ class DownloadRepository(
     fun localUri(songId: String): Uri? {
         val location = locationOf(songId) ?: return null
         if (location.startsWith("content://")) return Uri.parse(location)
-        return File(location).takeIf { it.exists() && it.length() > 0 }?.let(Uri::fromFile)
+        // El índice ya comprobó que el archivo existe; si luego desaparece, markMissing lo quita.
+        return Uri.fromFile(File(location))
     }
 
     fun localCover(songId: String): File? {
         ensureIndex()
         if (songId in removed) return null
-        return index.covers[songId]?.let(::File)?.takeIf { it.exists() }
+        return index.covers[songId]?.let(::File)
     }
 
     fun isDownloaded(songId: String): Boolean = localUri(songId) != null

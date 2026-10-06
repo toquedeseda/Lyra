@@ -119,6 +119,18 @@ class LyraApp : Application(), SingletonImageLoader.Factory {
         super.onCreate()
         // Lo primero: así también se apunta un cierre que pase al arrancar.
         com.lyra.music.core.ErrorLog.install(this)
+        // En la versión de pruebas, Android avisa (en el registro) de lo que hace esperar a la pantalla:
+        // leer el disco o usar internet en el hilo principal, y cosas que se quedan abiertas.
+        if (BuildConfig.DEBUG) {
+            android.os.StrictMode.setThreadPolicy(
+                android.os.StrictMode.ThreadPolicy.Builder().detectDiskReads().detectDiskWrites().detectNetwork().penaltyLog().build(),
+            )
+            android.os.StrictMode.setVmPolicy(
+                android.os.StrictMode.VmPolicy.Builder()
+                    .detectLeakedClosableObjects().detectLeakedSqlLiteObjects().detectActivityLeaks().detectLeakedRegistrationObjects()
+                    .penaltyLog().build(),
+            )
+        }
         container = AppContainer(this)
         createChannels()
         com.lyra.music.data.Notifier.createChannels(this)
