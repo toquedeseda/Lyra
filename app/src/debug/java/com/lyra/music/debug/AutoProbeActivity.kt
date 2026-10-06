@@ -31,13 +31,18 @@ import kotlin.coroutines.resumeWithException
  *
  * adb shell am start -n com.lyra.music.debug/com.lyra.music.debug.AutoProbeActivity \
  *     --es steps browse,search --es query "bad bunny" --es open liked --es play shuffle::liked \
- *     --es voice "mis me gusta" --es focus vnd.android.cursor.item/artist
+ *     --es voice "mis me gusta" --es focus vnd.android.cursor.item/artist --es pkg com.lyra.music
  */
 class AutoProbeActivity : Activity() {
 
     private val scope = MainScope()
     private val log = StringBuilder()
     private lateinit var browser: MediaBrowser
+
+    /** Servicio a probar: el de esta app o, con `--es pkg com.lyra.music`, el de la versión instalada. */
+    private val service by lazy {
+        ComponentName(intent.getStringExtra("pkg") ?: packageName, "com.lyra.music.playback.PlaybackService")
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -190,7 +195,7 @@ class AutoProbeActivity : Activity() {
     }
 
     private suspend fun media3(): androidx.media3.session.MediaController {
-        val token = SessionToken(this, ComponentName(this, "com.lyra.music.playback.PlaybackService"))
+        val token = SessionToken(this, service)
         return androidx.media3.session.MediaController.Builder(this, token).buildAsync().await()
     }
 
@@ -203,7 +208,7 @@ class AutoProbeActivity : Activity() {
         var created: MediaBrowser? = null
         created = MediaBrowser(
             this,
-            ComponentName(this, "com.lyra.music.playback.PlaybackService"),
+            service,
             object : MediaBrowser.ConnectionCallback() {
                 override fun onConnected() {
                     if (cont.isActive) cont.resume(created!!)
@@ -238,7 +243,7 @@ class AutoProbeActivity : Activity() {
 
     /** El MediaBrowser del sistema no busca: la búsqueda se prueba con el de Media3 (misma llamada en Lyra). */
     private suspend fun search(query: String): List<androidx.media3.common.MediaItem> = withTimeout(40_000) {
-        val token = SessionToken(this@AutoProbeActivity, ComponentName(this@AutoProbeActivity, "com.lyra.music.playback.PlaybackService"))
+        val token = SessionToken(this@AutoProbeActivity, service)
         val media3 = androidx.media3.session.MediaBrowser.Builder(this@AutoProbeActivity, token).buildAsync().await()
         try {
             media3.search(query, null).await()
