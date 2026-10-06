@@ -42,16 +42,15 @@ import com.lyra.music.data.model.ArtistPage
 import com.lyra.music.data.model.Source
 import com.lyra.music.ui.LocalActions
 import com.lyra.music.ui.components.BackBar
+import com.lyra.music.ui.components.ContextPlayControls
 import com.lyra.music.ui.components.ErrorView
 import com.lyra.music.ui.components.Eyebrow
 import com.lyra.music.ui.components.LoadViewModel
 import com.lyra.music.ui.components.Loadable
 import com.lyra.music.ui.components.LoadingView
 import com.lyra.music.ui.components.OutlineIconButton
-import com.lyra.music.ui.components.PlayCircleButton
 import com.lyra.music.ui.components.SectionHeader
 import com.lyra.music.ui.components.SectionView
-import com.lyra.music.ui.components.ShuffleIconButton
 import com.lyra.music.ui.components.SongRow
 import com.lyra.music.ui.components.pressable
 import com.lyra.music.ui.navigation.BrowseRoute
@@ -151,9 +150,11 @@ fun ArtistScreen(id: String, contentPadding: PaddingValues) {
                             })
                         }
                         Spacer(Modifier.weight(1f))
-                        ShuffleIconButton { actions.shuffle(page.topSongs, from = artist) }
-                        Spacer(Modifier.width(8.dp))
-                        PlayCircleButton({ actions.play(page.topSongs, 0, from = artist) })
+                        ContextPlayControls(
+                            contextId = artist.id,
+                            onPlay = { actions.play(page.topSongs, 0, from = artist) },
+                            onShuffle = { actions.shuffle(page.topSongs, from = artist) },
+                        )
                     }
                 }
                 if (page.topSongs.isNotEmpty()) {

@@ -4,6 +4,8 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -13,13 +15,17 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -29,6 +35,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -178,6 +185,73 @@ fun NudgeButton(icon: ImageVector, description: String, direction: Int, size: Dp
             modifier = Modifier
                 .size(size)
                 .graphicsLayer { translationX = offset.value * density },
+        )
+    }
+}
+
+/**
+ * Aleatorio de las cabeceras de listas: al encenderse "baraja" (vaivén), crece un poco
+ * y le sale un puntito debajo, como en Spotify; al apagarse se encoge y el punto se va.
+ */
+@Composable
+fun ShuffleToggle(active: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val tint by animateColorAsState(if (active) LyraColors.Accent else LyraColors.TextSecondary, tween(220), label = "aleatorio")
+    val dot by animateFloatAsState(
+        if (active) 1f else 0f,
+        spring(dampingRatio = 0.45f, stiffness = Spring.StiffnessMediumLow),
+        label = "punto",
+    )
+    val wiggle = remember { Animatable(1f) }
+    val scale = remember { Animatable(1f) }
+    val first = remember { booleanArrayOf(true) }
+    LaunchedEffect(active) {
+        if (first[0]) {
+            first[0] = false
+            return@LaunchedEffect
+        }
+        if (active) {
+            launch {
+                wiggle.snapTo(0f)
+                wiggle.animateTo(1f, tween(520, easing = LinearEasing))
+            }
+            scale.animateTo(1.28f, tween(120, easing = FastOutSlowInEasing))
+        } else {
+            scale.animateTo(0.82f, tween(100))
+        }
+        scale.animateTo(1f, spring(dampingRatio = 0.38f, stiffness = Spring.StiffnessMediumLow))
+    }
+    Box(
+        modifier
+            .size(48.dp)
+            .pressable(pressedScale = 0.85f, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            Icons.Rounded.Shuffle,
+            if (active) "Quitar aleatorio" else "Aleatorio",
+            tint = tint,
+            modifier = Modifier
+                .size(26.dp)
+                .graphicsLayer {
+                    // Vaivén que se apaga: las flechas se mueven a un lado y a otro un par de veces.
+                    val t = wiggle.value
+                    rotationZ = sin(t * 4f * PI.toFloat()) * 16f * (1f - t)
+                    scaleX = scale.value
+                    scaleY = scale.value
+                },
+        )
+        Box(
+            Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 5.dp)
+                .size(4.dp)
+                .graphicsLayer {
+                    scaleX = dot
+                    scaleY = dot
+                    alpha = dot.coerceIn(0f, 1f)
+                }
+                .clip(CircleShape)
+                .background(LyraColors.Accent),
         )
     }
 }

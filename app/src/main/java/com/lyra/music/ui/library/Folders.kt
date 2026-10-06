@@ -150,8 +150,8 @@ fun FolderScreen(id: Long, contentPadding: PaddingValues) {
         val songs = inside.flatMap { library.playlistSongList(it.id) }.distinctBy { it.id }
         when {
             songs.isEmpty() -> actions.message("Esta carpeta no tiene canciones")
-            shuffle -> actions.shuffle(songs, fromLabel = name)
-            else -> actions.play(songs, 0, fromLabel = name)
+            shuffle -> actions.shuffle(songs, fromLabel = name, contextId = "folder:$id")
+            else -> actions.play(songs, 0, fromLabel = name, contextId = "folder:$id")
         }
     }
 
@@ -166,6 +166,7 @@ fun FolderScreen(id: Long, contentPadding: PaddingValues) {
                 cover = { FolderCover(covers, it, RoundedCornerShape(16.dp)) },
                 onPlay = { playAll(shuffle = false) },
                 onShuffle = { playAll(shuffle = true) },
+                contextId = "folder:$id",
             ) {
                 OutlineIconButton(Icons.Rounded.LibraryAdd, "Añadir playlists", onClick = { choosing = true })
                 Row {

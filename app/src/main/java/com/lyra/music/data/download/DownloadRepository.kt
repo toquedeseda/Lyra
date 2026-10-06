@@ -63,21 +63,30 @@ class DownloadRepository(
     val totalBytes: Flow<Long> = dao.totalBytes()
     val pendingCount: Flow<Int> = dao.pendingCountFlow()
 
-    /** Índice síncrono de archivos (ruta o `content://`), para el reproductor. */
-    private val locations = ConcurrentHashMap<String, String>()
-    private val covers = ConcurrentHashMap<String, String>()
+    /**
+     * Índice síncrono de archivos (ruta o `content://`), para el reproductor. Se
+     * sustituye entero de una vez: antes se vaciaba y se volvía a llenar, y si el
+     * reproductor preguntaba justo entonces creía que la canción no estaba descargada.
+     */
+    private class Index(val locations: Map<String, String>, val covers: Map<String, String>)
+
+    @Volatile private var index = Index(emptyMap(), emptyMap())
     @Volatile private var indexLoaded = false
+
+    /** Cambios hechos al momento (borrados, archivos que faltan) hasta que llega el índice nuevo. */
+    private val locations = ConcurrentHashMap<String, String>()
+    private val removed = ConcurrentHashMap.newKeySet<String>()
 
     init {
         scope.launch {
             states.collect { map ->
-                locations.clear()
-                covers.clear()
                 // También las que se están volviendo a descargar: siguen sonando hasta que llega la nueva.
-                map.values.forEach { entity ->
-                    entity.filePath?.let { locations[entity.songId] = it }
-                    entity.coverPath?.let { covers[entity.songId] = it }
-                }
+                index = Index(
+                    map.values.mapNotNull { e -> e.filePath?.let { e.songId to it } }.toMap(),
+                    map.values.mapNotNull { e -> e.coverPath?.let { e.songId to it } }.toMap(),
+                )
+                locations.clear()
+                removed.clear()
                 indexLoaded = true
             }
         }
@@ -85,32 +94,40 @@ class DownloadRepository(
 
     private fun ensureIndex() {
         if (indexLoaded) return
-        runBlocking(Dispatchers.IO) {
-            dao.completed().forEach { entity ->
-                entity.filePath?.let { locations[entity.songId] = it }
-                entity.coverPath?.let { covers[entity.songId] = it }
-            }
+        val completed = runBlocking(Dispatchers.IO) { dao.completed() }
+        if (!indexLoaded) {
+            index = Index(
+                completed.mapNotNull { e -> e.filePath?.let { e.songId to it } }.toMap(),
+                completed.mapNotNull { e -> e.coverPath?.let { e.songId to it } }.toMap(),
+            )
+            indexLoaded = true
         }
-        indexLoaded = true
+    }
+
+    private fun locationOf(songId: String): String? {
+        ensureIndex()
+        if (songId in removed) return null
+        return locations[songId] ?: index.locations[songId]
     }
 
     /** Dónde está la canción descargada, o null si no lo está. */
     fun localUri(songId: String): Uri? {
-        ensureIndex()
-        val location = locations[songId] ?: return null
+        val location = locationOf(songId) ?: return null
         if (location.startsWith("content://")) return Uri.parse(location)
         return File(location).takeIf { it.exists() && it.length() > 0 }?.let(Uri::fromFile)
     }
 
     fun localCover(songId: String): File? {
         ensureIndex()
-        return covers[songId]?.let(::File)?.takeIf { it.exists() }
+        if (songId in removed) return null
+        return index.covers[songId]?.let(::File)?.takeIf { it.exists() }
     }
 
     fun isDownloaded(songId: String): Boolean = localUri(songId) != null
 
     /** El archivo ya no existe (p. ej. se borró desde el gestor de archivos). */
     fun markMissing(songId: String) {
+        removed += songId
         locations.remove(songId)
         scope.launch(Dispatchers.IO) { dao.delete(songId) }
     }
@@ -143,8 +160,8 @@ class DownloadRepository(
             entity.coverPath?.let { File(it).delete() }
         }
         dao.delete(songId)
+        removed += songId
         locations.remove(songId)
-        covers.remove(songId)
     }
 
     suspend fun removeAll(songIds: List<String>) = songIds.forEach { remove(it) }
@@ -155,8 +172,8 @@ class DownloadRepository(
         dao.clear()
         directory.listFiles()?.forEach { it.delete() }
         coversDirectory.listFiles()?.forEach { it.delete() }
+        index = Index(emptyMap(), emptyMap())
         locations.clear()
-        covers.clear()
     }
 
     suspend fun retryFailed() {

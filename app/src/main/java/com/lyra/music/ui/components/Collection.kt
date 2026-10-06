@@ -30,6 +30,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.scaleOut
@@ -143,6 +144,8 @@ fun CollectionHeader(
     description: String? = null,
     eyebrow: String? = null,
     backdrop: Any? = null,
+    /** Id de la lista en el reproductor: si es la que suena, play hace de pausa y el aleatorio se enciende sin reiniciar. */
+    contextId: String? = null,
     actionsRow: @Composable RowScope.() -> Unit = {},
 ) {
     Box(Modifier.fillMaxWidth()) {
@@ -192,9 +195,7 @@ fun CollectionHeader(
             ) {
                 actionsRow()
                 Spacer(Modifier.weight(1f))
-                ShuffleIconButton(onShuffle)
-                Spacer(Modifier.width(8.dp))
-                PlayCircleButton(onPlay)
+                ContextPlayControls(contextId, onPlay, onShuffle)
             }
         }
     }
@@ -263,4 +264,26 @@ fun totalDurationText(songs: List<Song>): String {
     val minutes = totalMinutes % 60
     val duration = if (hours > 0) "$hours h $minutes min" else "$minutes min"
     return "${songs.size} canciones · $duration"
+}
+
+/**
+ * Aleatorio y play de las cabeceras. Si esta lista es la que suena, play hace de pausa
+ * y el aleatorio se enciende o apaga sin volver a empezar; si no, la ponen (en orden o
+ * barajada) y el botón se enciende con su animación.
+ */
+@UnstableApi
+@Composable
+fun ContextPlayControls(contextId: String?, onPlay: () -> Unit, onShuffle: () -> Unit) {
+    val player = LocalActions.current.container.player
+    val state by player.state.collectAsState()
+    val current = contextId != null && state.song != null && state.contextId == contextId
+    ShuffleToggle(
+        active = current && state.shuffle,
+        onClick = { if (current) player.setShuffle(!state.shuffle) else onShuffle() },
+    )
+    Spacer(Modifier.width(4.dp))
+    PlayCircleButton(
+        onClick = { if (current) player.togglePlay() else onPlay() },
+        playing = current && state.isPlaying,
+    )
 }

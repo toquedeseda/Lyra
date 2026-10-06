@@ -107,6 +107,7 @@ fun LikedScreen(contentPadding: PaddingValues) {
                 cover = { SpecialCover(Icons.Rounded.Favorite, it, RoundedCornerShape(16.dp), filled = true) },
                 onPlay = { actions.play(songs, 0, from = from) },
                 onShuffle = { actions.shuffle(songs, from = from) },
+                contextId = from.id,
             ) {
                 DownloadAllButton(songs, "Canciones que te gustan")
                 OutlineIconButton(Icons.AutoMirrored.Rounded.PlaylistAdd, "Añadir a playlist", onClick = { actions.addToPlaylist = songs })
@@ -161,6 +162,7 @@ fun DownloadsScreen(contentPadding: PaddingValues) {
                 cover = { SpecialCover(Icons.Rounded.ArrowDownward, it, RoundedCornerShape(16.dp), filled = false) },
                 onPlay = { actions.play(completed, 0, from = from) },
                 onShuffle = { actions.shuffle(completed, from = from) },
+                contextId = from.id,
             ) {
                 if (failed > 0) {
                     OutlineIconButton(Icons.Rounded.Refresh, "Reintentar fallidas", onClick = { actions.launch { downloads.retryFailed() } })
@@ -348,6 +350,7 @@ fun LocalPlaylistScreen(id: Long, contentPadding: PaddingValues) {
                 },
                 onPlay = { actions.play(songs, 0, from = from) },
                 onShuffle = { actions.shuffle(songs, from = from) },
+                contextId = from?.id,
             ) {
                 DownloadAllButton(songs, current?.name)
                 OutlineIconButton(

@@ -35,6 +35,7 @@ import com.lyra.music.R
 import com.lyra.music.data.model.Song
 import com.lyra.music.data.model.cleaned
 import com.lyra.music.data.settings.AppSettings
+import com.lyra.music.playback.MediaItems.isRadio
 import com.lyra.music.playback.MediaItems.toMediaItem
 import com.lyra.music.playback.MediaItems.toSong
 import kotlinx.coroutines.CoroutineScope
@@ -49,6 +50,7 @@ import kotlinx.coroutines.guava.future
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import java.io.File
 
@@ -58,14 +60,26 @@ object LyraCommands {
     const val ACTION_START_RADIO = "lyra.radio"
     const val ACTION_PLAYLIST_RADIO = "lyra.playlist_radio"
     const val ACTION_NEW_QUEUE = "lyra.new_queue"
+    const val ACTION_SHUFFLE = "lyra.shuffle"
+    const val ACTION_REPEAT = "lyra.repeat"
+    const val ACTION_RADIO_HERE = "lyra.radio_here"
     const val ARG_SONG = "song"
     const val ARG_PLAYLIST = "playlist"
     const val ARG_SHUFFLE = "shuffle"
+    const val ARG_FROM = "from"
+    const val ARG_CONTEXT = "context"
+
+    /** En los extras de la sesión: de dónde sale lo que suena (texto e id). */
+    const val EXTRA_CONTEXT_LABEL = "lyra.context_label"
+    const val EXTRA_CONTEXT_ID = "lyra.context_id"
 
     val LIKE = SessionCommand(ACTION_LIKE, Bundle.EMPTY)
     val START_RADIO = SessionCommand(ACTION_START_RADIO, Bundle.EMPTY)
     val PLAYLIST_RADIO = SessionCommand(ACTION_PLAYLIST_RADIO, Bundle.EMPTY)
     val NEW_QUEUE = SessionCommand(ACTION_NEW_QUEUE, Bundle.EMPTY)
+    val SHUFFLE = SessionCommand(ACTION_SHUFFLE, Bundle.EMPTY)
+    val REPEAT = SessionCommand(ACTION_REPEAT, Bundle.EMPTY)
+    val RADIO_HERE = SessionCommand(ACTION_RADIO_HERE, Bundle.EMPTY)
 }
 
 @UnstableApi
@@ -83,24 +97,38 @@ class PlaybackService : MediaLibraryService() {
     private lateinit var tracker: PlaybackTracker
     private lateinit var queueStore: QueueStore
     private lateinit var autoLibrary: AutoLibrary
-    private val searchResults = mutableMapOf<String, List<Song>>()
+    private val searchResults = mutableMapOf<String, List<MediaItem>>()
     private var retryCount = 0
     private var pendingShuffleStart = false
     private lateinit var headphones: HeadphonesWatcher
     private lateinit var smartShuffle: SmartShuffleController
     private var widgetJob: kotlinx.coroutines.Job? = null
+    private var contextLabel: String? = null
+    private var contextId: String? = null
+    private val shuffleState = kotlinx.coroutines.flow.MutableStateFlow(false)
+    private val repeatState = kotlinx.coroutines.flow.MutableStateFlow(Player.REPEAT_MODE_OFF)
 
     /**
      * En aleatorio, la canción actual pasa a ser la primera del orden y el resto se
      * baraja detrás. Así suenan TODAS las de la lista (antes, las que quedaban
      * "antes" de la actual en el orden aleatorio no llegaban a sonar).
+     *
+     * Las que añadió la radio al acabarse la lista se quedan al final y en su orden:
+     * antes se barajaban con la lista y sonaban canciones que no eran de la playlist.
      */
     private fun shuffleFromCurrent() {
         val count = player.mediaItemCount
         if (count < 2) return
         val current = player.currentMediaItemIndex.coerceIn(0, count - 1)
-        val rest = (0 until count).filter { it != current }.shuffled()
-        player.setShuffleOrder(DefaultShuffleOrder((listOf(current) + rest).toIntArray(), System.nanoTime()))
+        val others = (0 until count).filter { it != current }
+        val order = if (player.getMediaItemAt(current).isRadio()) {
+            // Ya suena la radio (la lista se acabó): se baraja lo que queda.
+            others.shuffled()
+        } else {
+            val (radio, own) = others.partition { player.getMediaItemAt(it).isRadio() }
+            own.shuffled() + radio
+        }
+        player.setShuffleOrder(DefaultShuffleOrder((listOf(current) + order).toIntArray(), System.nanoTime()))
     }
 
     override fun onCreate() {
@@ -133,8 +161,10 @@ class PlaybackService : MediaLibraryService() {
         )
         session = MediaLibrarySession.Builder(this, player, SessionCallback())
             .setSessionActivity(openApp)
-            .setMediaButtonPreferences(buttons(liked = false))
+            .setMediaButtonPreferences(buttons(liked = false, shuffle = player.shuffleModeEnabled, repeat = player.repeatMode))
             .build()
+        // Lo que sonaba al cerrar sigue diciendo de dónde venía.
+        setContext(contextLabel, contextId)
 
         setMediaNotificationProvider(
             DefaultMediaNotificationProvider.Builder(this)
@@ -161,6 +191,30 @@ class PlaybackService : MediaLibraryService() {
                 com.lyra.music.widget.WidgetUpdater.push(this@PlaybackService, item?.toSong(), item?.mediaMetadata?.artworkUri, player.playWhenReady)
             }
         }
+    }
+
+    /** De dónde sale lo que suena ("Me gusta", una playlist, "Radio de…"): lo ven la app, el coche y el widget. */
+    private fun setContext(label: String?, id: String?) {
+        contextLabel = label
+        contextId = id
+        queueStore.contextLabel = label
+        queueStore.contextId = id
+        if (::session.isInitialized) {
+            session.setSessionExtras(
+                Bundle().apply {
+                    putString(LyraCommands.EXTRA_CONTEXT_LABEL, label)
+                    putString(LyraCommands.EXTRA_CONTEXT_ID, id)
+                },
+            )
+        }
+        queueStore.scheduleSave(player)
+    }
+
+    /** Una cola nueva empieza siempre sin el aleatorio inteligente (solo se activa a mano mientras suena). */
+    private fun resetSmartShuffle() {
+        if (!smartShuffle.enabled && !container.settings.current.smartShuffle) return
+        smartShuffle.enabled = false
+        scope.launch { container.settings.update { it.copy(smartShuffle = false) } }
     }
 
     /** Se conectaron unos auriculares: si la música se paró al quitarlos, sigue. */
@@ -232,16 +286,46 @@ class PlaybackService : MediaLibraryService() {
                     currentId.value = mediaItem?.mediaId
                 }
             })
-            combine(currentId, container.library.likedIds) { id, liked -> id != null && id in liked }
+            combine(currentId, container.library.likedIds, shuffleState, repeatState) { id, liked, shuffle, repeat ->
+                Triple(id != null && id in liked, shuffle, repeat)
+            }
                 .distinctUntilChanged()
-                .collect { liked -> session.setMediaButtonPreferences(buttons(liked)) }
+                .collect { (liked, shuffle, repeat) -> session.setMediaButtonPreferences(buttons(liked, shuffle, repeat)) }
         }
     }
 
-    private fun buttons(liked: Boolean): ImmutableList<CommandButton> = ImmutableList.of(
+    /** Botones extra (notificación, pantalla de bloqueo y Android Auto), como en Spotify. */
+    private fun buttons(liked: Boolean, shuffle: Boolean, repeat: Int): ImmutableList<CommandButton> = ImmutableList.of(
         CommandButton.Builder(if (liked) CommandButton.ICON_HEART_FILLED else CommandButton.ICON_HEART_UNFILLED)
             .setDisplayName(if (liked) "Quitar de Me gusta" else "Me gusta")
             .setSessionCommand(LyraCommands.LIKE)
+            .setSlots(CommandButton.SLOT_OVERFLOW)
+            .build(),
+        CommandButton.Builder(if (shuffle) CommandButton.ICON_SHUFFLE_ON else CommandButton.ICON_SHUFFLE_OFF)
+            .setDisplayName(if (shuffle) "Quitar aleatorio" else "Aleatorio")
+            .setSessionCommand(LyraCommands.SHUFFLE)
+            .setSlots(CommandButton.SLOT_OVERFLOW)
+            .build(),
+        CommandButton.Builder(
+            when (repeat) {
+                Player.REPEAT_MODE_ONE -> CommandButton.ICON_REPEAT_ONE
+                Player.REPEAT_MODE_ALL -> CommandButton.ICON_REPEAT_ALL
+                else -> CommandButton.ICON_REPEAT_OFF
+            },
+        )
+            .setDisplayName(
+                when (repeat) {
+                    Player.REPEAT_MODE_ONE -> "Repetir esta"
+                    Player.REPEAT_MODE_ALL -> "Repetir todo"
+                    else -> "Repetir"
+                },
+            )
+            .setSessionCommand(LyraCommands.REPEAT)
+            .setSlots(CommandButton.SLOT_OVERFLOW)
+            .build(),
+        CommandButton.Builder(CommandButton.ICON_RADIO)
+            .setDisplayName("Radio de esta canción")
+            .setSessionCommand(LyraCommands.RADIO_HERE)
             .setSlots(CommandButton.SLOT_OVERFLOW)
             .build(),
     )
@@ -250,12 +334,18 @@ class PlaybackService : MediaLibraryService() {
         val saved = queueStore.load() ?: return
         if (saved.songs.isEmpty()) return
         player.setMediaItems(
-            saved.songs.map { it.cleaned().toMediaItem(container.downloads.localCover(it.id), recommended = it.id in saved.recommended) },
+            saved.songs.map {
+                it.cleaned().toMediaItem(container.downloads.localCover(it.id), recommended = it.id in saved.recommended, radio = it.id in saved.radio)
+            },
             saved.index.coerceIn(0, saved.songs.size - 1),
             saved.positionMs,
         )
         player.shuffleModeEnabled = saved.shuffle
         player.repeatMode = saved.repeatMode
+        shuffleState.value = saved.shuffle
+        repeatState.value = saved.repeatMode
+        contextLabel = saved.contextLabel
+        contextId = saved.contextId
         player.prepare()
     }
 
@@ -264,6 +354,47 @@ class PlaybackService : MediaLibraryService() {
             container.database.songs().get(MediaItems.songIdOf(item.mediaId))?.toSong()
         } ?: return item
         return song.toMediaItem(container.downloads.localCover(song.id))
+    }
+
+    /** "Ok Google, pon música en Lyra" sin decir qué, con algo ya en la cola: sigue con ella tal cual. */
+    private fun voiceResume(query: String): MediaSession.MediaItemsWithStartPosition? {
+        if (query.isNotBlank() || player.mediaItemCount == 0) return null
+        pendingShuffleStart = true
+        val items = (0 until player.mediaItemCount).map { player.getMediaItemAt(it) }
+        return MediaSession.MediaItemsWithStartPosition(items, player.currentMediaItemIndex, player.currentPosition)
+    }
+
+    /**
+     * "Ok Google, pon … en Lyra". Si no se encuentra (o no hay internet), en el coche es
+     * mejor que suene algo tuyo que nada: tus Me gusta o, sin conexión, tus descargas.
+     */
+    private suspend fun voicePick(query: String, extras: Bundle?): AutoLibrary.Pick? {
+        if (query.isNotBlank()) {
+            autoLibrary.voice(query, extras)?.let { return it }
+            com.lyra.music.core.ErrorLog.record("Android Auto", "No encontré «$query» por voz; suenan tus canciones")
+        }
+        val liked = if (container.network.isOnline) autoLibrary.pick(AutoLibrary.SHUFFLE + AutoLibrary.LIKED) else null
+        return liked ?: autoLibrary.pick(AutoLibrary.SHUFFLE + AutoLibrary.DOWNLOADS)
+    }
+
+    /** Pone en marcha lo elegido en el coche: lista, punto de inicio, aleatorio y "Reproduciendo desde". */
+    private fun startFromCar(pick: AutoLibrary.Pick): MediaSession.MediaItemsWithStartPosition {
+        resetSmartShuffle()
+        pendingShuffleStart = true
+        pick.shuffle?.let { player.shuffleModeEnabled = it }
+        setContext(pick.label, pick.contextId)
+        pick.note?.let(container.library::noteContext)
+        val songs = pick.songs.map { it.cleaned() }
+        val target = songs.getOrNull(pick.index)
+        // Sin internet solo puede sonar lo descargado (si no hay nada descargado, se intenta igual).
+        val offline = !container.network.isOnline
+        val available = if (offline) songs.filter { container.downloads.isDownloaded(it.id) }.ifEmpty { songs } else songs
+        val index = available.indexOf(target).takeIf { it >= 0 } ?: if (pick.shuffle == true) available.indices.random() else 0
+        return MediaSession.MediaItemsWithStartPosition(
+            available.map { it.toMediaItem(container.downloads.localCover(it.id)) },
+            index,
+            if (available.size == songs.size) pick.positionMs else C.TIME_UNSET,
+        )
     }
 
     private inner class ServiceListener : Player.Listener {
@@ -280,7 +411,13 @@ class PlaybackService : MediaLibraryService() {
             queueStore.scheduleSave(player)
         }
 
+        override fun onRepeatModeChanged(repeatMode: Int) {
+            repeatState.value = repeatMode
+            queueStore.scheduleSave(player)
+        }
+
         override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
+            shuffleState.value = shuffleModeEnabled
             // Al activar el aleatorio a mitad de lista, la actual sigue y el resto se baraja.
             if (shuffleModeEnabled && !pendingShuffleStart) shuffleFromCurrent()
             queueStore.scheduleSave(player)
@@ -381,6 +518,9 @@ class PlaybackService : MediaLibraryService() {
                 .add(LyraCommands.START_RADIO)
                 .add(LyraCommands.PLAYLIST_RADIO)
                 .add(LyraCommands.NEW_QUEUE)
+                .add(LyraCommands.SHUFFLE)
+                .add(LyraCommands.REPEAT)
+                .add(LyraCommands.RADIO_HERE)
                 .build()
             return MediaSession.ConnectionResult.accept(commands, MediaSession.ConnectionResult.DEFAULT_PLAYER_COMMANDS)
         }
@@ -399,15 +539,39 @@ class PlaybackService : MediaLibraryService() {
                 LyraCommands.ACTION_START_RADIO -> {
                     args.getString(LyraCommands.ARG_SONG)
                         ?.let { runCatching { json.decodeFromString(Song.serializer(), it) }.getOrNull() }
-                        ?.let { crossfade.cancel(); radio.start(it) }
+                        ?.let { song ->
+                            crossfade.cancel()
+                            resetSmartShuffle()
+                            radio.start(song)
+                            setContext(args.getString(LyraCommands.ARG_FROM) ?: "Radio de ${song.title}", "radio:${song.id}")
+                        }
                 }
                 LyraCommands.ACTION_PLAYLIST_RADIO -> {
-                    args.getString(LyraCommands.ARG_PLAYLIST)?.let { crossfade.cancel(); radio.startFromPlaylist(it) }
+                    args.getString(LyraCommands.ARG_PLAYLIST)?.let { playlistId ->
+                        crossfade.cancel()
+                        resetSmartShuffle()
+                        radio.startFromPlaylist(playlistId)
+                        setContext(args.getString(LyraCommands.ARG_FROM), "radio:$playlistId")
+                    }
                 }
                 LyraCommands.ACTION_NEW_QUEUE -> {
                     crossfade.cancel()
                     radio.reset()
+                    resetSmartShuffle()
                     pendingShuffleStart = args.getBoolean(LyraCommands.ARG_SHUFFLE, false)
+                    setContext(args.getString(LyraCommands.ARG_FROM), args.getString(LyraCommands.ARG_CONTEXT))
+                }
+                LyraCommands.ACTION_SHUFFLE -> player.shuffleModeEnabled = !player.shuffleModeEnabled
+                LyraCommands.ACTION_REPEAT -> player.repeatMode = when (player.repeatMode) {
+                    Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
+                    Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
+                    else -> Player.REPEAT_MODE_OFF
+                }
+                LyraCommands.ACTION_RADIO_HERE -> player.currentMediaItem?.toSong()?.let { song ->
+                    crossfade.cancel()
+                    resetSmartShuffle()
+                    radio.start(song)
+                    setContext("Radio de ${song.title}", "radio:${song.id}")
                 }
             }
             return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
@@ -430,16 +594,19 @@ class PlaybackService : MediaLibraryService() {
             crossfade.cancel()
             radio.reset()
             val single = mediaItems.singleOrNull()
-            if (single != null && single.mediaId.contains("::")) {
-                // Android Auto: al tocar una canción de una lista, suena la lista entera desde ella.
+            val voiceQuery = single?.requestMetadata?.searchQuery
+            if (single != null && (voiceQuery != null || autoLibrary.isAutoId(single.mediaId))) {
+                // Android Auto: al tocar algo suena su lista entera; por voz, lo que mejor encaje.
                 return scope.future {
-                    val contextId = single.mediaId.substringBefore("::")
-                    val songId = MediaItems.songIdOf(single.mediaId)
-                    val songs = autoLibrary.songsFor(contextId).ifEmpty { listOfNotNull(single.toSong()) }
-                    val index = songs.indexOfFirst { it.id == songId }.coerceAtLeast(0)
-                    MediaSession.MediaItemsWithStartPosition(
-                        songs.map { it.toMediaItem(container.downloads.localCover(it.id)) }, index, C.TIME_UNSET,
-                    )
+                    if (voiceQuery != null) {
+                        voiceResume(voiceQuery)?.let { return@future it }
+                    }
+                    val pick = runCatching {
+                        if (voiceQuery != null) voicePick(voiceQuery, single.requestMetadata.extras) else autoLibrary.pick(single.mediaId)
+                    }.onFailure {
+                        com.lyra.music.core.ErrorLog.record("Android Auto", it.message ?: "No se pudo poner", it, extra = single.mediaId.ifBlank { voiceQuery })
+                    }.getOrNull() ?: throw IllegalStateException("Nada que poner para «${voiceQuery ?: single.mediaId}»")
+                    startFromCar(pick)
                 }
             }
             return Futures.immediateFuture(
@@ -456,9 +623,15 @@ class PlaybackService : MediaLibraryService() {
             if (saved == null || saved.songs.isEmpty()) {
                 return Futures.immediateFailedFuture(UnsupportedOperationException("No hay nada que retomar"))
             }
+            pendingShuffleStart = saved.shuffle
+            player.shuffleModeEnabled = saved.shuffle
+            player.repeatMode = saved.repeatMode
+            setContext(saved.contextLabel, saved.contextId)
             return Futures.immediateFuture(
                 MediaSession.MediaItemsWithStartPosition(
-                    saved.songs.map { it.toMediaItem(container.downloads.localCover(it.id)) },
+                    saved.songs.map {
+                        it.cleaned().toMediaItem(container.downloads.localCover(it.id), recommended = it.id in saved.recommended, radio = it.id in saved.radio)
+                    },
                     saved.index,
                     saved.positionMs,
                 ),
@@ -472,7 +645,9 @@ class PlaybackService : MediaLibraryService() {
             browser: MediaSession.ControllerInfo,
             params: LibraryParams?,
         ): ListenableFuture<LibraryResult<MediaItem>> =
-            Futures.immediateFuture(LibraryResult.ofItem(autoLibrary.root, params))
+            Futures.immediateFuture(
+                LibraryResult.ofItem(autoLibrary.root, LibraryParams.Builder().setExtras(autoLibrary.rootExtras).build()),
+            )
 
         override fun onGetChildren(
             session: MediaLibrarySession,
@@ -482,7 +657,7 @@ class PlaybackService : MediaLibraryService() {
             pageSize: Int,
             params: LibraryParams?,
         ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> = scope.future {
-            val all = runCatching { autoLibrary.children(parentId) }.getOrDefault(emptyList())
+            val all = withContext(Dispatchers.Default) { runCatching { autoLibrary.children(parentId) }.getOrDefault(emptyList()) }
             val from = (page * pageSize).coerceAtMost(all.size)
             val to = (from + pageSize).coerceAtMost(all.size)
             LibraryResult.ofItemList(ImmutableList.copyOf(all.subList(from, to)), params)
@@ -493,6 +668,7 @@ class PlaybackService : MediaLibraryService() {
             browser: MediaSession.ControllerInfo,
             mediaId: String,
         ): ListenableFuture<LibraryResult<MediaItem>> = scope.future {
+            autoLibrary.item(mediaId)?.let { return@future LibraryResult.ofItem(it, null) }
             val songId = MediaItems.songIdOf(mediaId)
             val song = container.database.songs().get(songId)?.toSong()
             if (song != null) LibraryResult.ofItem(autoLibrary.playable(song, mediaId.substringBefore("::")), null)
@@ -505,7 +681,8 @@ class PlaybackService : MediaLibraryService() {
             query: String,
             params: LibraryParams?,
         ): ListenableFuture<LibraryResult<Void>> = scope.future {
-            val results = runCatching { autoLibrary.search(query) }.getOrDefault(emptyList())
+            val results = withContext(Dispatchers.Default) { runCatching { autoLibrary.search(query) }.getOrDefault(emptyList()) }
+            if (searchResults.size > 20) searchResults.clear()
             searchResults[query] = results
             session.notifySearchResultChanged(browser, query, results.size, params)
             LibraryResult.ofVoid()
@@ -519,8 +696,8 @@ class PlaybackService : MediaLibraryService() {
             pageSize: Int,
             params: LibraryParams?,
         ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> = scope.future {
-            val results = searchResults[query] ?: autoLibrary.search(query)
-            val items = results.map { autoLibrary.playable(it, AutoLibrary.SEARCH_PREFIX + query) }
+            val items = searchResults[query]
+                ?: withContext(Dispatchers.Default) { runCatching { autoLibrary.search(query) }.getOrDefault(emptyList()) }
             val from = (page * pageSize).coerceAtMost(items.size)
             val to = (from + pageSize).coerceAtMost(items.size)
             LibraryResult.ofItemList(ImmutableList.copyOf(items.subList(from, to)), params)

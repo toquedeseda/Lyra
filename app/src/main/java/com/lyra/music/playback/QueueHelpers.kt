@@ -1,5 +1,6 @@
 package com.lyra.music.playback
 
+import android.os.Handler
 import android.os.SystemClock
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -13,6 +14,7 @@ import com.lyra.music.data.repo.LibraryRepository
 import com.lyra.music.data.repo.MusicRepository
 import com.lyra.music.data.settings.SettingsRepository
 import com.lyra.music.data.repo.SongMatcher
+import com.lyra.music.playback.MediaItems.isRadio
 import com.lyra.music.playback.MediaItems.isRecommended
 import com.lyra.music.playback.MediaItems.toMediaItem
 import com.lyra.music.playback.MediaItems.toSong
@@ -46,53 +48,69 @@ class RadioController(
     private var continuation: String? = null
     private var loading = false
 
+    /**
+     * Sube con cada cola nueva. Lo que llegue tarde de una búsqueda de la cola anterior
+     * se descarta (antes podía colar canciones de otra radio en la playlist recién puesta).
+     */
+    private var generation = 0
+    private val handler = Handler(player.applicationLooper)
+
     init {
         player.addListener(this)
     }
 
     /** Reproduce [seed] y rellena la cola con su radio. */
     fun start(seed: Song) {
+        val gen = ++generation
+        continuation = null
+        loading = true
         player.shuffleModeEnabled = false
         player.setMediaItems(listOf(seed.toMediaItem(downloads.localCover(seed.id))))
         player.prepare()
         player.play()
-        continuation = null
-        loading = true
         scope.launch {
             runCatching { music.radio(seed) }.onSuccess { page ->
+                if (gen != generation) return@onSuccess
                 continuation = page.continuation
                 append(page.songs.filterNot { it.id == seed.id })
             }
-            loading = false
+            if (gen == generation) loading = false
         }
     }
 
     /** Reproduce una playlist o mix de YouTube como radio (p. ej. la radio de un artista). */
     fun startFromPlaylist(playlistId: String) {
+        val gen = ++generation
+        continuation = null
         loading = true
         scope.launch {
             runCatching { music.radioFromPlaylist(playlistId) }.onSuccess { page ->
-                if (page.songs.isNotEmpty()) {
-                    player.shuffleModeEnabled = false
-                    player.setMediaItems(page.songs.map { it.toMediaItem(downloads.localCover(it.id)) })
-                    player.prepare()
-                    player.play()
-                    continuation = page.continuation
-                }
+                if (gen != generation || page.songs.isEmpty()) return@onSuccess
+                player.shuffleModeEnabled = false
+                player.setMediaItems(page.songs.map { it.toMediaItem(downloads.localCover(it.id)) })
+                player.prepare()
+                player.play()
+                continuation = page.continuation
             }
-            loading = false
+            if (gen == generation) loading = false
         }
     }
 
     /** Se ha puesto una cola nueva: la radio anterior ya no vale. */
     fun reset() {
+        generation++
         continuation = null
+        loading = false
     }
 
-    override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) = maybeExtend()
+    // Se mira justo después de que el resto ordene la cola nueva (el aleatorio pone la actual
+    // la primera): antes se miraba con el orden a medias y la radio arrancaba al empezar la lista.
+    override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+        handler.post(::maybeExtend)
+    }
 
     override fun onTimelineChanged(timeline: Timeline, reason: Int) {
-        if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) maybeExtend()
+        if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) handler.post(::maybeExtend)
     }
 
     private fun maybeExtend() {
@@ -104,19 +122,22 @@ class RadioController(
         val lastIndex = order.lastOrNull() ?: (player.mediaItemCount - 1)
         val last = player.getMediaItemAt(lastIndex).toSong() ?: return
         loading = true
+        val gen = generation
         scope.launch {
             val token = continuation
             val page = runCatching { if (token != null) music.radioMore(token) else music.radio(last) }.getOrNull()
+            if (gen != generation) return@launch
             if (page != null) {
                 continuation = page.continuation
-                val added = append(page.songs)
+                val added = append(page.songs, radio = true)
                 if (added == 0) continuation = null
             }
             loading = false
         }
     }
 
-    private suspend fun append(candidates: List<Song>): Int {
+    /** Añade [candidates] al final. Con [radio], quedan marcadas como "de la radio" (no son de tu lista). */
+    private suspend fun append(candidates: List<Song>, radio: Boolean = false): Int {
         val existingIds = (0 until player.mediaItemCount).map { player.getMediaItemAt(it).mediaId }.toSet()
         val existingKeys = (0 until player.mediaItemCount).mapNotNull { player.getMediaItemAt(it).toSong()?.let(::songKey) }.toSet()
         var fresh = candidates.filter { it.id !in existingIds && songKey(it) !in existingKeys }.distinctBy { songKey(it) }
@@ -135,7 +156,7 @@ class RadioController(
         // Orden de reproducción antes de añadir (tiene en cuenta el aleatorio).
         val before = playOrder()
         val firstNew = player.mediaItemCount
-        player.addMediaItems(fresh.map { it.toMediaItem(downloads.localCover(it.id)) })
+        player.addMediaItems(fresh.map { it.toMediaItem(downloads.localCover(it.id), radio = radio) })
         if (player.shuffleModeEnabled) {
             // Las nuevas, al final del orden aleatorio y en el orden de la radio.
             val order = before + (firstNew until player.mediaItemCount)
@@ -236,6 +257,11 @@ data class SavedQueue(
     val repeatMode: Int = Player.REPEAT_MODE_OFF,
     /** Ids de las que metió el aleatorio inteligente. */
     val recommended: List<String> = emptyList(),
+    /** Ids de las que añadió la radio al acabarse la lista. */
+    val radio: List<String> = emptyList(),
+    /** De dónde salía ("Me gusta", una playlist…) y su id. */
+    val contextLabel: String? = null,
+    val contextId: String? = null,
 )
 
 /** Guarda la cola en disco para retomarla al volver a abrir la app. */
@@ -243,6 +269,10 @@ class QueueStore(private val file: File, private val scope: CoroutineScope) {
 
     private val json = Json { ignoreUnknownKeys = true }
     private var pending: Job? = null
+
+    /** Lo pone el servicio cada vez que cambia el origen de la cola. */
+    @Volatile var contextLabel: String? = null
+    @Volatile var contextId: String? = null
 
     fun load(): SavedQueue? = runCatching { json.decodeFromString(SavedQueue.serializer(), file.readText()) }.getOrNull()
 
@@ -273,7 +303,9 @@ class QueueStore(private val file: File, private val scope: CoroutineScope) {
         val start = (player.currentMediaItemIndex - 100).coerceAtLeast(0)
         val end = (start + 500).coerceAtMost(player.mediaItemCount)
         val songs = (start until end).mapNotNull { player.getMediaItemAt(it).toSong() }
-        val recommended = (start until end).map { player.getMediaItemAt(it) }.filter { it.isRecommended() }.map { it.mediaId }
+        val items = (start until end).map { player.getMediaItemAt(it) }
+        val recommended = items.filter { it.isRecommended() }.map { it.mediaId }
+        val radio = items.filter { it.isRadio() }.map { it.mediaId }
         return SavedQueue(
             songs = songs,
             index = (player.currentMediaItemIndex - start).coerceIn(0, (songs.size - 1).coerceAtLeast(0)),
@@ -281,6 +313,9 @@ class QueueStore(private val file: File, private val scope: CoroutineScope) {
             shuffle = player.shuffleModeEnabled,
             repeatMode = player.repeatMode,
             recommended = recommended,
+            radio = radio,
+            contextLabel = contextLabel,
+            contextId = contextId,
         )
     }
 }

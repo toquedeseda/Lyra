@@ -11,6 +11,7 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.lyra.music.data.download.DownloadRepository
 import com.lyra.music.data.model.Song
+import com.lyra.music.playback.MediaItems.isRadio
 import com.lyra.music.playback.MediaItems.isRecommended
 import com.lyra.music.playback.MediaItems.toMediaItem
 import com.lyra.music.playback.MediaItems.toSong
@@ -41,8 +42,12 @@ data class PlayerUiState(
     val hasPrevious: Boolean = false,
     val error: String? = null,
     val playingFrom: String? = null,
+    /** Id de la lista, álbum o radio que suena (para que su cabecera sepa que es "la que suena"). */
+    val contextId: String? = null,
     /** Canciones de la cola que ha metido el aleatorio inteligente. */
     val recommendedIds: Set<String> = emptySet(),
+    /** Canciones que ha añadido la radio al acabarse la lista. */
+    val radioIds: Set<String> = emptySet(),
 )
 
 data class Progress(val positionMs: Long = 0, val durationMs: Long = 0, val bufferedMs: Long = 0)
@@ -74,14 +79,32 @@ class PlayerConnection(
         connecting = true
         scope.launch {
             val token = SessionToken(context, ComponentName(context, PlaybackService::class.java))
-            val built = runCatching { MediaController.Builder(context, token).buildAsync().await() }.getOrNull()
+            val built = runCatching {
+                MediaController.Builder(context, token)
+                    .setListener(object : MediaController.Listener {
+                        override fun onExtrasChanged(controller: MediaController, extras: Bundle) = applyContext(extras)
+                    })
+                    .buildAsync().await()
+            }.getOrNull()
             connecting = false
             if (built == null) return@launch
             controller = built
             built.addListener(listener)
             refresh(built)
             refreshQueue(built)
+            applyContext(built.sessionExtras)
             ready.complete(built)
+        }
+    }
+
+    /** El servicio cuenta de dónde sale lo que suena (también si lo puso el coche o al reabrir la app). */
+    private fun applyContext(extras: Bundle) {
+        if (!extras.containsKey(LyraCommands.EXTRA_CONTEXT_LABEL) && !extras.containsKey(LyraCommands.EXTRA_CONTEXT_ID)) return
+        _state.update {
+            it.copy(
+                playingFrom = extras.getString(LyraCommands.EXTRA_CONTEXT_LABEL),
+                contextId = extras.getString(LyraCommands.EXTRA_CONTEXT_ID),
+            )
         }
     }
 
@@ -104,12 +127,22 @@ class PlayerConnection(
 
     // ------------------------------------------------------------- órdenes
 
-    /** Reproduce una lista empezando por [startIndex]. [from] es el texto "Reproduciendo desde…". */
-    fun play(songs: List<Song>, startIndex: Int = 0, shuffle: Boolean = false, from: String? = null) {
+    /**
+     * Reproduce una lista empezando por [startIndex]. [from] es el texto "Reproduciendo desde…"
+     * y [contextId] el id de esa lista (para la cabecera que la muestra).
+     */
+    fun play(songs: List<Song>, startIndex: Int = 0, shuffle: Boolean = false, from: String? = null, contextId: String? = null) {
         if (songs.isEmpty()) return
-        _state.update { it.copy(playingFrom = from) }
+        _state.update { it.copy(playingFrom = from, contextId = contextId) }
         command { c ->
-            c.sendCustomCommand(LyraCommands.NEW_QUEUE, Bundle().apply { putBoolean(LyraCommands.ARG_SHUFFLE, shuffle) })
+            c.sendCustomCommand(
+                LyraCommands.NEW_QUEUE,
+                Bundle().apply {
+                    putBoolean(LyraCommands.ARG_SHUFFLE, shuffle)
+                    putString(LyraCommands.ARG_FROM, from)
+                    putString(LyraCommands.ARG_CONTEXT, contextId)
+                },
+            )
             val index = if (shuffle) songs.indices.random() else startIndex.coerceIn(0, songs.size - 1)
             c.shuffleModeEnabled = shuffle
             c.setMediaItems(songs.map { it.toMediaItem(downloads.localCover(it.id)) }, index, 0)
@@ -136,7 +169,7 @@ class PlayerConnection(
     }
 
     fun startRadio(song: Song) {
-        _state.update { it.copy(playingFrom = "Radio de ${song.title}") }
+        _state.update { it.copy(playingFrom = "Radio de ${song.title}", contextId = "radio:${song.id}") }
         command { c ->
             val args = Bundle().apply { putString(LyraCommands.ARG_SONG, json.encodeToString(Song.serializer(), song)) }
             c.sendCustomCommand(LyraCommands.START_RADIO, args)
@@ -144,9 +177,15 @@ class PlayerConnection(
     }
 
     fun startPlaylistRadio(playlistId: String, from: String) {
-        _state.update { it.copy(playingFrom = from) }
+        _state.update { it.copy(playingFrom = from, contextId = "radio:$playlistId") }
         command { c ->
-            c.sendCustomCommand(LyraCommands.PLAYLIST_RADIO, Bundle().apply { putString(LyraCommands.ARG_PLAYLIST, playlistId) })
+            c.sendCustomCommand(
+                LyraCommands.PLAYLIST_RADIO,
+                Bundle().apply {
+                    putString(LyraCommands.ARG_PLAYLIST, playlistId)
+                    putString(LyraCommands.ARG_FROM, from)
+                },
+            )
         }
     }
 
@@ -258,7 +297,8 @@ class PlayerConnection(
         val items = (0 until c.mediaItemCount).map { index -> c.getMediaItemAt(index) }
         val songs = items.mapNotNull { it.toSong() }
         val recommended = items.filter { it.isRecommended() }.mapTo(HashSet()) { it.mediaId }
-        _state.update { it.copy(queue = songs, currentIndex = c.currentMediaItemIndex, recommendedIds = recommended) }
+        val radio = items.filter { it.isRadio() }.mapTo(HashSet()) { it.mediaId }
+        _state.update { it.copy(queue = songs, currentIndex = c.currentMediaItemIndex, recommendedIds = recommended, radioIds = radio) }
     }
 
     /** Orden real de reproducción (tiene en cuenta el modo aleatorio). */

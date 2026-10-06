@@ -38,6 +38,9 @@ class NetworkMonitor(context: Context) {
         connectivity.getNetworkCapabilities(connectivity.activeNetwork)?.hasInternet() == true
     }.getOrDefault(true)
 
-    private fun NetworkCapabilities.hasInternet() =
-        hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) && hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+    /**
+     * Basta con una red con internet: en algunas wifis (empresa, instituto, VPN) la
+     * comprobación de Google falla aunque YouTube funcione, y no hay que bloquear nada.
+     */
+    private fun NetworkCapabilities.hasInternet() = hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
 }

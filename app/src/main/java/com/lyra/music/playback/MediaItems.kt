@@ -17,7 +17,13 @@ import java.io.File
 object MediaItems {
     private const val EXTRA_SONG = "lyra.song"
     private const val EXTRA_RECOMMENDED = "lyra.recommended"
+    private const val EXTRA_RADIO = "lyra.radio"
     private val json = Json { ignoreUnknownKeys = true }
+
+    /** Canciones ya leídas de su JSON (con colas de cientos, leerlas en cada cambio daba tirones). */
+    private val decoded = object : LinkedHashMap<String, Song>(512, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Song>) = size > 3_000
+    }
 
     fun uriFor(songId: String): Uri = Uri.parse("lyra://" + songId.replaceFirst(':', '/'))
 
@@ -48,18 +54,22 @@ object MediaItems {
         return "$host:$path"
     }
 
-    /** [recommended]: la ha metido el aleatorio inteligente (se marca en la cola). */
-    fun Song.toMediaItem(coverFile: File? = null, recommended: Boolean = false): MediaItem = MediaItem.Builder()
+    /**
+     * [recommended]: la ha metido el aleatorio inteligente (se marca en la cola).
+     * [radio]: la ha añadido la radio al acabarse tu lista (el aleatorio no la mezcla con la lista).
+     */
+    fun Song.toMediaItem(coverFile: File? = null, recommended: Boolean = false, radio: Boolean = false): MediaItem = MediaItem.Builder()
         .setMediaId(id)
         .setUri(uriFor(this))
         .setCustomCacheKey(id)
-        .setMediaMetadata(toMetadata(coverFile, recommended))
+        .setMediaMetadata(toMetadata(coverFile, recommended, radio))
         .build()
 
-    fun Song.toMetadata(coverFile: File? = null, recommended: Boolean = false): MediaMetadata {
+    fun Song.toMetadata(coverFile: File? = null, recommended: Boolean = false, radio: Boolean = false): MediaMetadata {
         val extras = Bundle().apply {
             putString(EXTRA_SONG, json.encodeToString(Song.serializer(), this@toMetadata))
             if (recommended) putBoolean(EXTRA_RECOMMENDED, true)
+            if (radio) putBoolean(EXTRA_RADIO, true)
         }
         return MediaMetadata.Builder()
             .setTitle(title)
@@ -80,7 +90,12 @@ object MediaItems {
     /** Reconstruye la canción desde un MediaItem (también los que vienen de otros procesos). */
     fun MediaItem.toSong(): Song? {
         mediaMetadata.extras?.getString(EXTRA_SONG)?.let { encoded ->
-            runCatching { return json.decodeFromString(Song.serializer(), encoded) }
+            synchronized(decoded) { decoded[encoded] }?.let { return it }
+            runCatching {
+                val song = json.decodeFromString(Song.serializer(), encoded)
+                synchronized(decoded) { decoded[encoded] = song }
+                return song
+            }
         }
         val id = mediaId.substringAfter("::").takeIf { it.startsWith("yt:") || it.startsWith("sc:") } ?: return null
         return Song(
@@ -94,6 +109,9 @@ object MediaItems {
 
     /** Canción que ha metido el aleatorio inteligente. */
     fun MediaItem.isRecommended(): Boolean = mediaMetadata.extras?.getBoolean(EXTRA_RECOMMENDED, false) == true
+
+    /** Canción que ha añadido la radio infinita detrás de tu lista. */
+    fun MediaItem.isRadio(): Boolean = mediaMetadata.extras?.getBoolean(EXTRA_RADIO, false) == true
 
     /** Los elementos del árbol de Android Auto llevan el contexto delante: `liked::yt:abc`. */
     fun songIdOf(mediaId: String): String = mediaId.substringAfter("::")

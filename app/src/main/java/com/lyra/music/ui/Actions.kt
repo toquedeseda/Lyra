@@ -88,7 +88,7 @@ class LyraActions(
     private fun playable(songs: List<Song>): List<Song> =
         if (online) songs else songs.filter { container.downloads.isDownloaded(it.id) }
 
-    fun play(songs: List<Song>, index: Int = 0, from: MusicItem? = null, fromLabel: String? = null) {
+    fun play(songs: List<Song>, index: Int = 0, from: MusicItem? = null, fromLabel: String? = null, contextId: String? = null) {
         if (songs.isEmpty()) return
         val target = songs.getOrNull(index)
         val available = playable(songs)
@@ -101,10 +101,16 @@ class LyraActions(
             return
         }
         from?.let(container.library::noteContext)
-        player.play(available, available.indexOf(target).coerceAtLeast(0), shuffle = false, from = fromLabel ?: from?.title)
+        player.play(
+            available,
+            available.indexOf(target).coerceAtLeast(0),
+            shuffle = false,
+            from = fromLabel ?: from?.title,
+            contextId = contextId ?: from?.id,
+        )
     }
 
-    fun shuffle(songs: List<Song>, from: MusicItem? = null, fromLabel: String? = null) {
+    fun shuffle(songs: List<Song>, from: MusicItem? = null, fromLabel: String? = null, contextId: String? = null) {
         if (songs.isEmpty()) return
         val available = playable(songs)
         if (available.isEmpty()) {
@@ -112,7 +118,7 @@ class LyraActions(
             return
         }
         from?.let(container.library::noteContext)
-        player.play(available, 0, shuffle = true, from = fromLabel ?: from?.title)
+        player.play(available, 0, shuffle = true, from = fromLabel ?: from?.title, contextId = contextId ?: from?.id)
     }
 
     /** Botón de aleatorio del reproductor: apagado → aleatorio → inteligente → apagado. */

@@ -9,6 +9,7 @@ import androidx.media3.exoplayer.source.ShuffleOrder.DefaultShuffleOrder
 import com.lyra.music.data.download.DownloadRepository
 import com.lyra.music.data.model.Song
 import com.lyra.music.data.repo.Recommender
+import com.lyra.music.playback.MediaItems.isRadio
 import com.lyra.music.playback.MediaItems.isRecommended
 import com.lyra.music.playback.MediaItems.toMediaItem
 import com.lyra.music.playback.MediaItems.toSong
@@ -38,6 +39,7 @@ class SmartShuffleController(
 
     private var job: Job? = null
     private var busy = false
+    private var jobSignature: String? = null
 
     init {
         player.addListener(this)
@@ -46,8 +48,18 @@ class SmartShuffleController(
     override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) = update()
 
     override fun onTimelineChanged(timeline: Timeline, reason: Int) {
-        if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED && !busy) update()
+        if (reason != Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED || busy) return
+        // Si ha llegado otra cola, lo que se estaba buscando era para la anterior: fuera.
+        if (job?.isActive == true && signature() != jobSignature) job?.cancel()
+        update()
     }
+
+    /** Huella de la cola (sus primeras canciones propias): cambia si se pone otra lista. */
+    private fun signature(): String = (0 until player.mediaItemCount).asSequence()
+        .map { player.getMediaItemAt(it) }
+        .filterNot { it.isRecommended() || it.isRadio() }
+        .take(20)
+        .joinToString("|") { it.mediaId }
 
     private fun update() {
         if (enabled && player.shuffleModeEnabled) fill() else removeRecommended()
@@ -58,11 +70,14 @@ class SmartShuffleController(
     private fun fill() {
         if (job?.isActive == true || player.mediaItemCount < MIN_QUEUE || hasRecommended()) return
         val songs = (0 until player.mediaItemCount).mapNotNull { player.getMediaItemAt(it).toSong() }
+        val wanted = signature()
+        jobSignature = wanted
         job = scope.launch {
             val count = (songs.size / EVERY).coerceIn(3, 40)
             val recommended = runCatching { recommender.similarTo(songs, count = count, seeds = 5) }.getOrDefault(emptyList())
             // Mientras se buscaban pudo cambiar la cola o quitarse el aleatorio.
             if (recommended.isEmpty() || !enabled || !player.shuffleModeEnabled || hasRecommended()) return@launch
+            if (signature() != wanted) return@launch
             insert(recommended)
         }
     }

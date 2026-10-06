@@ -67,6 +67,7 @@ fun AlbumScreen(id: String, contentPadding: PaddingValues) {
                         cover = { Artwork(album.thumbnailUrl, it, RoundedCornerShape(16.dp)) },
                         onPlay = { actions.play(page.songs, 0, from = album) },
                         onShuffle = { actions.shuffle(page.songs, from = album) },
+                        contextId = album.id,
                     ) {
                         OutlineIconButton(
                             if (saved) Icons.Rounded.Check else Icons.Rounded.Add,

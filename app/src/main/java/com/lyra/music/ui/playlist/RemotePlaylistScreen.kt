@@ -97,6 +97,7 @@ fun RemotePlaylistScreen(id: String, contentPadding: PaddingValues) {
                         cover = { Artwork(playlist.thumbnailUrl, it, RoundedCornerShape(16.dp)) },
                         onPlay = { actions.play(page.songs, 0, from = playlist) },
                         onShuffle = { actions.shuffle(page.songs, from = playlist) },
+                        contextId = playlist.id,
                     ) {
                         OutlineIconButton(Icons.Rounded.Add, "Guardar en la biblioteca", onClick = {
                             actions.launch {

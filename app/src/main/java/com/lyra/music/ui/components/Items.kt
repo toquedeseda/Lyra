@@ -39,7 +39,6 @@ import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -639,7 +638,14 @@ fun SectionView(section: Section, onMore: (() -> Unit)? = null) {
 
 /** Botón circular color hueso con el play oscuro. */
 @Composable
-fun PlayCircleButton(onClick: () -> Unit, modifier: Modifier = Modifier, size: Dp = 56.dp, icon: ImageVector = Icons.Rounded.PlayArrow) {
+fun PlayCircleButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    size: Dp = 56.dp,
+    icon: ImageVector = Icons.Rounded.PlayArrow,
+    /** Si se indica, el icono pasa de play a pausa (animado) según suene o no. */
+    playing: Boolean? = null,
+) {
     Box(
         modifier = modifier
             .size(size)
@@ -649,14 +655,11 @@ fun PlayCircleButton(onClick: () -> Unit, modifier: Modifier = Modifier, size: D
             .pressable(pressedScale = 0.92f, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(icon, "Reproducir", tint = LyraColors.OnAccent, modifier = Modifier.size(size * 0.56f))
-    }
-}
-
-@Composable
-fun ShuffleIconButton(onClick: () -> Unit) {
-    IconButton(onClick = onClick) {
-        Icon(Icons.Rounded.Shuffle, "Aleatorio", tint = LyraColors.TextSecondary, modifier = Modifier.size(26.dp))
+        if (playing != null) {
+            PlayPauseIcon(playing, LyraColors.OnAccent, size * 0.56f)
+        } else {
+            Icon(icon, "Reproducir", tint = LyraColors.OnAccent, modifier = Modifier.size(size * 0.56f))
+        }
     }
 }
 

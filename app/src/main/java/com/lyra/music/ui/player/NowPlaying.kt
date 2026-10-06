@@ -213,7 +213,13 @@ fun NowPlayingScreen(
             Row(Modifier.padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onClose) { Icon(Icons.Rounded.KeyboardArrowDown, "Cerrar", modifier = Modifier.size(30.dp)) }
                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Eyebrow(if (song != null && song.id in state.recommendedIds) "Recomendada · aleatorio inteligente" else "Reproduciendo desde")
+                    Eyebrow(
+                        when {
+                            song != null && song.id in state.recommendedIds -> "Recomendada · aleatorio inteligente"
+                            song != null && song.id in state.radioIds && state.contextId?.startsWith("radio:") != true -> "Radio · después de tu lista"
+                            else -> "Reproduciendo desde"
+                        },
+                    )
                     Text(
                         state.playingFrom ?: song?.album?.title ?: "Tu cola",
                         style = MaterialTheme.typography.titleSmall,

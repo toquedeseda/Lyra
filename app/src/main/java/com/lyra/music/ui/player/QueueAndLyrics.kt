@@ -26,6 +26,7 @@ import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.DragHandle
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.Radio
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -182,16 +183,22 @@ fun QueueSheet(onDismiss: () -> Unit) {
                             trailing = when {
                                 !state.shuffle -> {
                                     {
-                                        Icon(
-                                            Icons.Rounded.DragHandle,
-                                            "Arrastrar",
-                                            tint = LyraColors.TextSecondary,
-                                            modifier = Modifier
-                                                .padding(12.dp)
-                                                .size(24.dp)
-                                                .reorderHandle(reorder, position),
-                                        )
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            if (entry.song.id in state.radioIds) RadioMark()
+                                            Icon(
+                                                Icons.Rounded.DragHandle,
+                                                "Arrastrar",
+                                                tint = LyraColors.TextSecondary,
+                                                modifier = Modifier
+                                                    .padding(12.dp)
+                                                    .size(24.dp)
+                                                    .reorderHandle(reorder, position),
+                                            )
+                                        }
                                     }
+                                }
+                                entry.song.id in state.radioIds -> {
+                                    { RadioMark(Modifier.padding(end = 16.dp)) }
                                 }
                                 entry.song.id in state.recommendedIds -> {
                                     {
@@ -214,12 +221,24 @@ fun QueueSheet(onDismiss: () -> Unit) {
     }
 }
 
+/** Marca de las canciones que ha añadido la radio detrás de tu lista. */
+@Composable
+private fun RadioMark(modifier: Modifier = Modifier) {
+    Icon(Icons.Rounded.Radio, "De la radio, después de tu lista", tint = LyraColors.TextTertiary, modifier = modifier.size(16.dp))
+}
+
 @UnstableApi
 @Composable
 fun LyricsFullScreen(song: Song, lyrics: Lyrics, onClose: () -> Unit) {
     val player = LocalActions.current.container.player
     val progress by player.progress.collectAsState()
     BackHandler(onBack = onClose)
+    // Mientras se lee la letra, la pantalla no se apaga.
+    val view = androidx.compose.ui.platform.LocalView.current
+    androidx.compose.runtime.DisposableEffect(view) {
+        view.keepScreenOn = true
+        onDispose { view.keepScreenOn = false }
+    }
 
     Column(
         Modifier
