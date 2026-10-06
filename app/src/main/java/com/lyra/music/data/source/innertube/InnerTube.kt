@@ -26,6 +26,8 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
 import java.net.URLEncoder
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonPrimitive
 
 /** Filtros de búsqueda de YouTube Music (parámetro `params`). */
 enum class SearchFilter(val params: String?) {
@@ -195,6 +197,12 @@ class InnerTube(
             put("continuation", continuation)
             put("isAudioOnly", true)
         })
+
+    /** Título, artistas, carátula y duración de varias canciones de golpe (hasta unas 50 por vez). */
+    suspend fun songs(songIds: List<String>): List<Song> =
+        InnerTubeParser.radio(post("music/get_queue") {
+            put("videoIds", JsonArray(songIds.map { JsonPrimitive(it.remoteId()) }))
+        }).songs
 
     suspend fun related(relatedBrowseId: String): BrowsePage =
         InnerTubeParser.browse(post("browse") { put("browseId", relatedBrowseId) })

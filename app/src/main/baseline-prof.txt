@@ -1,0 +1,4 @@
+# Perfil de arranque: Android compila esto por adelantado al instalar Lyra (con ProfileInstaller,
+# también fuera de Google Play), en vez de interpretarlo las primeras veces que se abre.
+HSPLcom/lyra/music/**->**(**)**
+Lcom/lyra/music/**;

@@ -47,6 +47,17 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Playlists compartidas desde Lyra: el enlace de la web se abre directamente aquí
+                 (la web publica /.well-known/assetlinks.json con la firma de la app). -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="https"
+                    android:host="lyra.shopxcenter.duckdns.org"
+                    android:pathPrefix="/p" />
+            </intent-filter>
             <!-- "Compartir → Lyra" desde YouTube, YouTube Music o SoundCloud -->
             <intent-filter android:label="@string/share_label">
                 <action android:name="android.intent.action.SEND" />
@@ -74,18 +85,8 @@
             </intent-filter>
         </receiver>
 
-        <service
-            android:name=".island.IslandAccessibilityService"
-            android:exported="false"
-            android:label="@string/island_accessibility_label"
-            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
-            <intent-filter>
-                <action android:name="android.accessibilityservice.AccessibilityService" />
-            </intent-filter>
-            <meta-data
-                android:name="android.accessibilityservice"
-                android:resource="@xml/accessibility_island" />
-        </service>
+        <!-- La isla junto a la cámara (servicio de accesibilidad) solo va en la versión completa:
+             src/completa/AndroidManifest.xml -->
 
         <provider
             android:name=".playback.ArtworkProvider"

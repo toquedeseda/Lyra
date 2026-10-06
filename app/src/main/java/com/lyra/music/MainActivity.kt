@@ -24,20 +24,21 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         val splash = installSplashScreen()
         super.onCreate(savedInstanceState)
-        // Al entrar, el logo crece un poco y se desvanece.
+        // Al entrar, el logo crece un poco y se desvanece (rápido: el Inicio ya está listo detrás).
         splash.setOnExitAnimationListener { provider ->
             provider.iconView.animate()
-                .scaleX(1.25f).scaleY(1.25f).alpha(0f)
-                .setDuration(320L)
+                .scaleX(1.2f).scaleY(1.2f).alpha(0f)
+                .setDuration(220L)
                 .withEndAction { provider.remove() }
                 .start()
-            provider.view.animate().alpha(0f).setStartDelay(120L).setDuration(260L).start()
+            provider.view.animate().alpha(0f).setDuration(220L).start()
         }
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
         )
-        container.player.connect()
+        // El reproductor se conecta justo después de dibujar la primera pantalla (ver LyraRoot): al
+        // conectarse arranca el servicio de música, que recupera la cola, y eso retrasaba el Inicio.
         requestNotificationPermission()
         if (savedInstanceState == null) handleIntent(intent)
 

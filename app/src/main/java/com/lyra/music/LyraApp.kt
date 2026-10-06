@@ -84,6 +84,7 @@ class AppContainer(val app: Application) {
         IslandController(app, settings, scope, downloads.states, library.likedIds) { id -> database.songs().get(id)?.toSong() }
     }
     val updates by lazy { UpdateRepository(app, http, scope) }
+    val sharing by lazy { com.lyra.music.data.share.PlaylistSharing(http) }
     val backup by lazy { BackupManager(app, database, settings, downloads) }
     val spotifyImport by lazy {
         com.lyra.music.data.repo.SpotifyImportManager(
@@ -121,7 +122,10 @@ class LyraApp : Application(), SingletonImageLoader.Factory {
         container = AppContainer(this)
         createChannels()
         com.lyra.music.data.Notifier.createChannels(this)
-        com.lyra.music.data.MaintenanceWorker.schedule(this)
+        // WorkManager tarda en prepararse: se hace fuera del hilo de la pantalla.
+        container.scope.launch(kotlinx.coroutines.Dispatchers.Default) {
+            com.lyra.music.data.MaintenanceWorker.schedule(this@LyraApp)
+        }
 
         // La isla no se muestra mientras Lyra está en pantalla.
         ProcessLifecycleOwner.get().lifecycle.addObserver(

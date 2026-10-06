@@ -35,6 +35,15 @@ class LiveSourcesTest {
     }
 
     @Test
+    fun `youtube music - datos de varias canciones a la vez`() = runBlocking {
+        val api = InnerTube(http)
+        val ids = listOf("yt:kJQP7kiw5Fk", "yt:qkO6iBwcoe4", "yt:lxvv1M7MACo")
+        val songs = api.songs(ids)
+        assertEquals(ids.toSet(), songs.map { it.id }.toSet())
+        assertTrue(songs.all { it.title.isNotBlank() && it.artists.isNotEmpty() && it.thumbnailUrl != null })
+    }
+
+    @Test
     fun `youtube music - buscar, album, radio e inicio con paginas`() = runBlocking {
         val api = InnerTube(http)
         val songs = api.search("rosalia", SearchFilter.SONGS)

@@ -128,6 +128,7 @@ import com.lyra.music.ui.components.enterFor
 import com.lyra.music.ui.components.exitFor
 import com.lyra.music.ui.components.popEnterFor
 import com.lyra.music.ui.components.popExitFor
+import androidx.compose.runtime.withFrameNanos
 
 private data class Tab(val route: Any, val label: String, val icon: ImageVector, val selectedIcon: ImageVector)
 
@@ -188,6 +189,13 @@ fun LyraRoot(container: AppContainer) {
             }
             else -> Unit
         }
+    }
+
+    // El reproductor (y su servicio) se conecta cuando la primera pantalla ya se ha dibujado.
+    LaunchedEffect(Unit) {
+        withFrameNanos { }
+        withFrameNanos { }
+        container.player.connect()
     }
 
     // Si la última vez Lyra se cerró de golpe, se ofrece ver el informe.
@@ -265,6 +273,7 @@ fun LyraRoot(container: AppContainer) {
                             screen<PlaylistRoute> { RemotePlaylistScreen(it.toRoute<PlaylistRoute>().id, padding) }
                             screen<LocalPlaylistRoute> { LocalPlaylistScreen(it.toRoute<LocalPlaylistRoute>().id, padding) }
                             screen<com.lyra.music.ui.navigation.ErrorsRoute> { com.lyra.music.ui.settings.ErrorsScreen(padding) }
+                        screen<com.lyra.music.ui.navigation.SharedPlaylistRoute> { com.lyra.music.ui.playlist.SharedPlaylistScreen(padding) }
                             screen<com.lyra.music.ui.navigation.FolderRoute> {
                                 com.lyra.music.ui.library.FolderScreen(it.toRoute<com.lyra.music.ui.navigation.FolderRoute>().id, padding)
                             }

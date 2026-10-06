@@ -45,6 +45,7 @@ import com.lyra.music.island.IslandController
 import com.lyra.music.ui.LocalActions
 import com.lyra.music.ui.components.PageHeader
 import com.lyra.music.ui.theme.LyraColors
+import com.lyra.music.BuildConfig
 
 @UnstableApi
 @Composable
@@ -67,7 +68,8 @@ fun IslandScreen(contentPadding: PaddingValues) {
     fun update(transform: (AppSettings) -> AppSettings) = actions.launch { container.settings.update(transform) }
 
     Column(Modifier.fillMaxSize()) {
-        PageHeader("Isla flotante", "Lo que suena, junto a la cámara, fuera de Lyra.")
+        val nextToCamera = BuildConfig.ISLAND_NEXT_TO_CAMERA
+        PageHeader("Isla flotante", if (nextToCamera) "Lo que suena, junto a la cámara, fuera de Lyra." else "Lo que suena, arriba de la pantalla, fuera de Lyra.")
         Column(
             Modifier
                 .verticalScroll(rememberScrollState())
@@ -75,7 +77,11 @@ fun IslandScreen(contentPadding: PaddingValues) {
         ) {
             Preview(s)
             Text(
-                "Aparece junto a la cámara cuando sales de Lyra con música sonando. Tócala para desplegarla con los controles; mantenla pulsada para abrir Lyra.",
+                if (nextToCamera) {
+                    "Aparece junto a la cámara cuando sales de Lyra con música sonando. Tócala para desplegarla con los controles; mantenla pulsada para abrir Lyra."
+                } else {
+                    "Aparece arriba, justo debajo de la barra de estado, cuando sales de Lyra con música sonando. Tócala para desplegarla con los controles; mantenla pulsada para abrir Lyra."
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 color = LyraColors.TextSecondary,
                 modifier = Modifier.padding(horizontal = 20.dp),
@@ -83,14 +89,14 @@ fun IslandScreen(contentPadding: PaddingValues) {
             SwitchRow("Activar la isla", null, s.islandEnabled) { value -> update { it.copy(islandEnabled = value) } }
 
             Group("Permisos")
-            NavRow(
+            if (nextToCamera) NavRow(
                 "Accesibilidad (recomendado)",
                 if (accessibilityOn) "Activado ✓ — la isla puede ir encima de la barra de estado, junto a la cámara"
                 else "Desactivado. Ajustes → Accesibilidad → Apps instaladas → Lyra isla → Activar",
             ) {
                 context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             }
-            if (!accessibilityOn && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (nextToCamera && !accessibilityOn && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 NavRow(
                     "¿Sale en gris?",
                     "Android bloquea la accesibilidad de apps instaladas a mano. Abre la info de Lyra → menú ⋮ (arriba a la derecha) → «Permitir ajustes restringidos», y vuelve a intentarlo.",
@@ -100,12 +106,15 @@ fun IslandScreen(contentPadding: PaddingValues) {
             }
             NavRow(
                 "Mostrar sobre otras apps",
-                if (overlayOn) "Permitido ✓ — se usa si la accesibilidad está apagada (la isla va justo debajo de la barra de estado)"
-                else "No permitido",
+                when {
+                    !overlayOn -> "No permitido: actívalo para que salga la isla"
+                    nextToCamera -> "Permitido ✓ — se usa si la accesibilidad está apagada (la isla va justo debajo de la barra de estado)"
+                    else -> "Permitido ✓"
+                },
             ) {
                 context.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}")))
             }
-            NavRow("Modo", modeLabel(s.islandMode)) { modeDialog = true }
+            if (nextToCamera) NavRow("Modo", modeLabel(s.islandMode)) { modeDialog = true }
 
             Group("Tamaño y posición")
             SliderRow("Ancho", "${s.islandWidth} dp", s.islandWidth.toFloat(), 80f..240f, 0) { v -> update { it.copy(islandWidth = v.toInt()) } }
@@ -113,7 +122,8 @@ fun IslandScreen(contentPadding: PaddingValues) {
             SliderRow("Mover a los lados", "${s.islandOffsetX} dp", s.islandOffsetX.toFloat(), -140f..140f, 0) { v -> update { it.copy(islandOffsetX = v.toInt()) } }
             SliderRow("Mover arriba/abajo", "${s.islandOffsetY} dp", s.islandOffsetY.toFloat(), -30f..90f, 0) { v -> update { it.copy(islandOffsetY = v.toInt()) } }
             Text(
-                "Consejo: pon música, sal de Lyra y mira dónde queda. Vuelve y ajústala hasta que rodee la cámara.",
+                if (nextToCamera) "Consejo: pon música, sal de Lyra y mira dónde queda. Vuelve y ajústala hasta que rodee la cámara."
+                else "Consejo: pon música, sal de Lyra y mira dónde queda. Vuelve y ajústala a tu gusto.",
                 style = MaterialTheme.typography.bodySmall,
                 color = LyraColors.TextTertiary,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),

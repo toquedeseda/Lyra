@@ -39,6 +39,7 @@ import com.lyra.music.ui.navigation.SearchRoute
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import com.lyra.music.data.share.PlaylistSharing
 
 /** Menú de una canción, con el contexto desde el que se abrió. */
 data class SongMenuRequest(val song: Song, val localPlaylistId: Long? = null, val queueIndex: Int? = null)
@@ -67,6 +68,9 @@ class LyraActions(
 
     /** Canción cuya tarjeta para compartir se está mostrando (null = ninguna). */
     var shareCard by mutableStateOf<Song?>(null)
+
+    /** Enlace de la playlist compartida que se está viendo (ver SharedPlaylistScreen). */
+    var sharedLink by mutableStateOf<String?>(null)
 
     /** Búsqueda que la pestaña Buscar debe lanzar al abrirse (desde la biblioteca). */
     var pendingSearch by mutableStateOf<String?>(null)
@@ -223,8 +227,29 @@ class LyraActions(
         if (id != null) nav.navigate(AlbumRoute(id)) else message("Esta canción no tiene álbum")
     }
 
+    /** Comparte una playlist con un enlace que la abre en la Lyra de quien lo reciba. */
+    fun sharePlaylist(name: String, songs: List<Song>) {
+        if (songs.isEmpty()) {
+            message("La playlist está vacía")
+            return
+        }
+        scope.launch {
+            val link = container.sharing.linkFor(name, songs)
+            val send = Intent(Intent.ACTION_SEND)
+                .setType("text/plain")
+                .putExtra(Intent.EXTRA_TEXT, "Escucha «$name» en Lyra: $link")
+                .putExtra(Intent.EXTRA_TITLE, name)
+            context.startActivity(Intent.createChooser(send, "Compartir «$name»").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }
+    }
+
     /** Enlace pegado o compartido desde otra app. */
     fun openLink(url: String) {
+        if (PlaylistSharing.isPlaylistLink(url)) {
+            sharedLink = url
+            nav.navigate(com.lyra.music.ui.navigation.SharedPlaylistRoute) { launchSingleTop = true }
+            return
+        }
         if (container.spotifyImport.isSpotifyLink(url)) {
             importDialog = url
             return

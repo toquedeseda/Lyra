@@ -61,7 +61,8 @@ Write-Host "Versión $current -> $Version (código $newCode)" -ForegroundColor C
 
 # --- 2. Tests y compilación ----------------------------------------------------
 try {
-    Invoke-Tool "$root\gradlew.bat" @(":app:testDebugUnitTest", ":app:assembleRelease", "--console=plain")
+    # Las dos versiones: la completa (isla junto a la cámara) y la de amigos (sin ese permiso).
+    Invoke-Tool "$root\gradlew.bat" @(":app:testCompletaDebugUnitTest", ":app:assembleCompletaRelease", ":app:assembleAmigosRelease", "--console=plain")
 } catch {
     # Si algo falla, la versión vuelve a como estaba.
     [IO.File]::WriteAllText($gradleFile, $originalGradle, (New-Object System.Text.UTF8Encoding $false))
@@ -70,8 +71,10 @@ try {
 
 New-Item -ItemType Directory -Force "$root\dist" | Out-Null
 $apk = "$root\dist\Lyra-v$Version.apk"
-Copy-Item "$root\app\build\outputs\apk\release\app-release.apk" $apk -Force
-Write-Host "APK: $apk" -ForegroundColor Cyan
+$apkFriends = "$root\dist\Lyra-v${Version}_amigos.apk"
+Copy-Item "$root\app\build\outputs\apk\completa\release\app-completa-release.apk" $apk -Force
+Copy-Item "$root\app\build\outputs\apk\amigos\release\app-amigos-release.apk" $apkFriends -Force
+Write-Host "APK: $apk y $apkFriends" -ForegroundColor Cyan
 
 # --- 3. Notas -------------------------------------------------------------------
 $notesPath = "$root\dist\notas-v$Version.md"
@@ -99,6 +102,9 @@ if ($CommitTrailer) {
 }
 Invoke-Tool "git" @("tag", "v$Version")
 Invoke-Tool "git" @("push", "-q", "origin", "HEAD", "--tags")
+# Primero la completa y después la de amigos: las versiones antiguas de la app (hasta la 1.6)
+# se actualizan con el primer .apk de la release, y ese tiene que ser el de la completa.
 Invoke-Tool "gh" @("release", "create", "v$Version", $apk, "--title", "Lyra $Version", "--notes-file", $notesPath)
+Invoke-Tool "gh" @("release", "upload", "v$Version", $apkFriends)
 
 Write-Host "Publicada Lyra $Version. El móvil la verá al abrir la app (o en Ajustes -> Buscar actualizaciones)." -ForegroundColor Green

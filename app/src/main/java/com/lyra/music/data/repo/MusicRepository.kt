@@ -125,6 +125,15 @@ class MusicRepository(
 
     suspend fun radioMore(token: String): RadioPage = innerTube.radioMore(token)
 
+    /**
+     * Datos completos (carátula, álbum, duración…) de canciones de las que solo se sabe el id,
+     * p. ej. las de una playlist compartida. Las de SoundCloud se quedan como están.
+     */
+    suspend fun songsByIds(ids: List<String>): Map<String, Song> =
+        ids.filter { Source.of(it) == Source.YOUTUBE }.distinct().chunked(50)
+            .flatMap { chunk -> runCatching { innerTube.songs(chunk) }.getOrDefault(emptyList()) }
+            .associateBy { it.id }
+
     suspend fun radioFromPlaylist(playlistId: String): RadioPage = innerTube.radioFromPlaylist(playlistId)
 
     suspend fun related(song: Song): BrowsePage? {

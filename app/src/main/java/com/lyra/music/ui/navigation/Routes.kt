@@ -21,3 +21,6 @@ import kotlinx.serialization.Serializable
 @Serializable data object IslandRoute
 @Serializable data class FolderRoute(val id: Long)
 @Serializable data object ErrorsRoute
+
+/** Playlist abierta desde un enlace compartido (el enlace va en LyraActions.sharedLink). */
+@Serializable data object SharedPlaylistRoute

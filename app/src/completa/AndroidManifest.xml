@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Solo en la versión completa: la isla puede ir encima de la barra de estado, junto a la cámara.
+     Es el permiso que hace que Google Play Protect bloquee la app al instalarla desde fuera de
+     Google Play; por eso la versión para amigos no lo lleva. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <service
+            android:name="com.lyra.music.island.IslandAccessibilityService"
+            android:exported="false"
+            android:label="@string/island_accessibility_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_island" />
+        </service>
+    </application>
+
+</manifest>

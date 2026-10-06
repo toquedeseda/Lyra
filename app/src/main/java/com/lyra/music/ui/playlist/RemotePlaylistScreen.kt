@@ -41,6 +41,7 @@ import androidx.compose.foundation.layout.Box
 import com.lyra.music.ui.components.CollapsingTopBar
 import com.lyra.music.ui.components.CollectionSkeleton
 import com.lyra.music.ui.components.LoadableCrossfade
+import androidx.compose.material.icons.rounded.Share
 
 @UnstableApi
 class RemotePlaylistViewModel(private val container: AppContainer, private val id: String) : LoadViewModel<PlaylistPage>() {
@@ -117,6 +118,7 @@ fun RemotePlaylistScreen(id: String, contentPadding: PaddingValues) {
                                     }
                                 })
                                 DownloadAllButton(page.songs, playlist.title)
+                                OutlineIconButton(Icons.Rounded.Share, "Compartir", onClick = { actions.sharePlaylist(playlist.title, page.songs) })
                             }
                         }
                         itemsIndexed(page.songs, key = { _, song -> song.id }) { index, song ->

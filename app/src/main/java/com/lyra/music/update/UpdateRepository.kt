@@ -301,7 +301,10 @@ class UpdateRepository(
 
     private fun Release.toInfo(): UpdateInfo? {
         if (draft || prerelease) return null
-        val apk = assets.firstOrNull { it.name.endsWith(".apk", ignoreCase = true) } ?: return null
+        // Cada versión de la app (completa o para amigos) se actualiza con su archivo.
+        val apks = assets.filter { it.name.endsWith(".apk", ignoreCase = true) }
+        val forFriends = BuildConfig.UPDATE_ASSET == "amigos"
+        val apk = apks.firstOrNull { it.name.contains("_amigos") == forFriends } ?: apks.firstOrNull() ?: return null
         return UpdateInfo(tag_name.removePrefix("v"), body.orEmpty().withoutInstallGuide(), apk.browser_download_url, apk.size, html_url)
     }
 

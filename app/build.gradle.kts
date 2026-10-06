@@ -8,8 +8,8 @@ plugins {
 }
 
 // La versiÃ³n la cambia el script release.ps1: no tocar el formato de estas dos lÃ­neas.
-val lyraVersionCode = 8
-val lyraVersionName = "1.6.0"
+val lyraVersionCode = 9
+val lyraVersionName = "1.7.0"
 
 // Datos de firma de las releases (fuera del repositorio, ver README).
 val keystoreProps = Properties().apply {
@@ -53,6 +53,24 @@ android {
         debug {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
+        }
+    }
+
+    // Dos versiones con el mismo paquete (se pueden instalar una encima de la otra):
+    //  - completa: la isla puede ir junto a la cámara (necesita el permiso de accesibilidad).
+    //  - amigos: sin ese permiso, para que Google Play Protect no la bloquee al instalarla.
+    // Cada una se actualiza con su archivo de la release (Lyra-vX.apk / Lyra-vX_amigos.apk).
+    flavorDimensions += "version"
+    productFlavors {
+        create("completa") {
+            dimension = "version"
+            buildConfigField("boolean", "ISLAND_NEXT_TO_CAMERA", "true")
+            buildConfigField("String", "UPDATE_ASSET", "\"completa\"")
+        }
+        create("amigos") {
+            dimension = "version"
+            buildConfigField("boolean", "ISLAND_NEXT_TO_CAMERA", "false")
+            buildConfigField("String", "UPDATE_ASSET", "\"amigos\"")
         }
     }
 

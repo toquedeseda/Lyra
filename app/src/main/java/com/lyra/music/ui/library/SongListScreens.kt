@@ -85,6 +85,7 @@ import com.lyra.music.ui.components.reorderItem
 import com.lyra.music.ui.components.totalDurationText
 import com.lyra.music.ui.theme.LyraColors
 import com.lyra.music.ui.components.CollapsingTopBar
+import androidx.compose.material.icons.rounded.Share
 
 @UnstableApi
 @Composable
@@ -366,6 +367,7 @@ fun LocalPlaylistScreen(id: Long, contentPadding: PaddingValues) {
                     listState = listState,
                 ) {
                     DownloadAllButton(songs, current?.name)
+                    OutlineIconButton(Icons.Rounded.Share, "Compartir", onClick = { actions.sharePlaylist(current?.name.orEmpty(), songs) })
                     OutlineIconButton(
                         Icons.Rounded.DragHandle,
                         "Reordenar",

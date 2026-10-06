@@ -65,6 +65,7 @@ import com.lyra.music.ui.theme.LyraColors
 import kotlinx.coroutines.launch
 import java.util.Calendar
 import com.lyra.music.ui.components.SectionsSkeleton
+import androidx.activity.compose.ReportDrawnWhen
 
 @OptIn(ExperimentalMaterial3Api::class)
 @UnstableApi
@@ -84,6 +85,9 @@ fun HomeScreen(contentPadding: PaddingValues) {
     var chipError by remember { mutableStateOf<String?>(null) }
     var refreshing by remember { mutableStateOf(false) }
     val online by container.network.online.collectAsState()
+
+    // Para medir el arranque: la app está lista cuando el Inicio ya enseña algo.
+    ReportDrawnWhen { !online || feed.quickAccess.isNotEmpty() || feed.sections.isNotEmpty() }
 
     // Al volver internet, el Inicio se pone al día.
     LaunchedEffect(online) { if (online) container.home.refresh() }
