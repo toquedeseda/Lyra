@@ -115,6 +115,19 @@ import com.lyra.music.ui.theme.LyraColors
 import com.lyra.music.ui.update.UpdateDialog
 import com.lyra.music.ui.update.WhatsNewDialog
 import com.lyra.music.update.UpdateState
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.navigation.NavBackStackEntry
+import androidx.navigation.NavGraphBuilder
+import kotlinx.coroutines.delay
+import com.lyra.music.ui.components.LocalNavScope
+import com.lyra.music.ui.components.LocalScreenTransition
+import com.lyra.music.ui.components.LocalSharedScope
+import com.lyra.music.ui.components.enterFor
+import com.lyra.music.ui.components.exitFor
+import com.lyra.music.ui.components.popEnterFor
+import com.lyra.music.ui.components.popExitFor
 
 private data class Tab(val route: Any, val label: String, val icon: ImageVector, val selectedIcon: ImageVector)
 
@@ -183,9 +196,18 @@ fun LyraRoot(container: AppContainer) {
 
     // Actualizaciones al abrir y "Novedades" tras actualizar.
     var whatsNew by remember { mutableStateOf<Pair<String, String>?>(null) }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(settings.loaded, settings.checkUpdates) {
+        if (!settings.loaded || !settings.checkUpdates) return@LaunchedEffect
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            while (true) {
+                container.updates.check()
+                delay(5 * 60_000L)
+            }
+        }
+    }
     LaunchedEffect(settings.loaded) {
         if (!settings.loaded) return@LaunchedEffect
-        if (settings.checkUpdates) container.updates.check()
         val current = container.updates.currentVersion
         if (settings.lastSeenVersion != current) {
             if (settings.lastSeenVersion.isNotEmpty()) {
@@ -207,130 +229,135 @@ fun LyraRoot(container: AppContainer) {
                 .background(LyraColors.Background),
         ) {
             val shared = this
-            Box(Modifier.fillMaxSize()) {
-                Scaffold(
-                    containerColor = LyraColors.Background,
-                    snackbarHost = {
-                        SnackbarHost(snackbar) { data ->
-                            Snackbar(
-                                data,
-                                shape = RoundedCornerShape(14.dp),
-                                containerColor = LyraColors.SurfaceHigher,
-                                contentColor = LyraColors.TextPrimary,
-                                actionColor = LyraColors.Accent,
-                            )
-                        }
-                    },
-                    bottomBar = { BottomBar(actions, shared) },
-                ) { padding ->
-                    NavHost(
-                        navController = nav,
-                        startDestination = HomeRoute,
-                        enterTransition = { fadeIn(tween(240)) + slideInHorizontally(tween(320, easing = SmoothOut)) { it / 14 } },
-                        exitTransition = { fadeOut(tween(160)) },
-                        popEnterTransition = { fadeIn(tween(240)) },
-                        popExitTransition = { fadeOut(tween(180)) + slideOutHorizontally(tween(240)) { it / 14 } },
-                    ) {
-                        composable<HomeRoute> { HomeScreen(padding) }
-                        composable<SearchRoute> { SearchScreen(padding) }
-                        composable<LibraryRoute> { LibraryScreen(padding) }
-                        composable<AlbumRoute> { AlbumScreen(it.toRoute<AlbumRoute>().id, padding) }
-                        composable<ArtistRoute> { ArtistScreen(it.toRoute<ArtistRoute>().id, padding) }
-                        composable<PlaylistRoute> { RemotePlaylistScreen(it.toRoute<PlaylistRoute>().id, padding) }
-                        composable<LocalPlaylistRoute> { LocalPlaylistScreen(it.toRoute<LocalPlaylistRoute>().id, padding) }
-                        composable<com.lyra.music.ui.navigation.ErrorsRoute> { com.lyra.music.ui.settings.ErrorsScreen(padding) }
-                        composable<com.lyra.music.ui.navigation.FolderRoute> {
-                            com.lyra.music.ui.library.FolderScreen(it.toRoute<com.lyra.music.ui.navigation.FolderRoute>().id, padding)
-                        }
-                        composable<BrowseRoute> {
-                            val route = it.toRoute<BrowseRoute>()
-                            BrowseScreen(route.browseId, route.params, route.title, padding)
-                        }
-                        composable<LikedRoute> { LikedScreen(padding) }
-                        composable<DownloadsRoute> { DownloadsScreen(padding) }
-                        composable<HistoryRoute> { HistoryScreen(padding) }
-                        composable<SettingsRoute> { SettingsScreen(padding) }
-                        composable<EqualizerRoute> { EqualizerScreen(padding) }
-                        composable<IslandRoute> { IslandScreen(padding) }
-                    }
-                }
-
-                // Franja oscura tras la barra de estado para que el contenido no se mezcle con la hora.
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .windowInsetsTopHeight(WindowInsets.statusBars)
-                        .background(LyraColors.Background.copy(alpha = 0.75f)),
-                )
-
-                AnimatedVisibility(
-                    visible = actions.nowPlayingOpen,
-                    enter = slideInVertically(tween(420, easing = SmoothOut)) { it / 3 } + fadeIn(tween(260)),
-                    exit = slideOutVertically(tween(320)) { it / 3 } + fadeOut(tween(220)),
-                ) {
-                    NowPlayingScreen(
-                        onClose = { actions.nowPlayingOpen = false },
-                        sharedScope = shared,
-                        visibilityScope = this,
-                    )
-                }
-
-                actions.songMenu?.let { request -> SongMenuSheet(request, onDismiss = { actions.songMenu = null }) }
-                actions.addToPlaylist?.let { songs -> AddToPlaylistSheet(songs, onDismiss = { actions.addToPlaylist = null }) }
-                actions.shareCard?.let { song ->
-                    com.lyra.music.ui.share.ShareCardDialog(song, onDismiss = { actions.shareCard = null })
-                }
-                actions.importDialog?.let { url ->
-                    com.lyra.music.ui.components.SpotifyImportDialog(url, onDismiss = { actions.importDialog = null })
-                }
-
-                when (val state = updateState) {
-                    is UpdateState.Available, is UpdateState.Downloading, is UpdateState.Installing,
-                    is UpdateState.NeedsPermission, is UpdateState.Failed -> {
-                        if (state is UpdateState.Failed && state.info == null) {
-                            // Fallo al comprobar: solo se avisa si lo pidió el usuario.
-                            LaunchedEffect(state) {
-                                if (state.manual) actions.message("No se pudo comprobar: ${state.reason}")
-                                container.updates.dismiss()
+            CompositionLocalProvider(
+                LocalSharedScope provides shared,
+                LocalScreenTransition provides settings.screenTransition,
+            ) {
+                Box(Modifier.fillMaxSize()) {
+                    Scaffold(
+                        containerColor = LyraColors.Background,
+                        snackbarHost = {
+                            SnackbarHost(snackbar) { data ->
+                                Snackbar(
+                                    data,
+                                    shape = RoundedCornerShape(14.dp),
+                                    containerColor = LyraColors.SurfaceHigher,
+                                    contentColor = LyraColors.TextPrimary,
+                                    actionColor = LyraColors.Accent,
+                                )
                             }
-                        } else {
-                            UpdateDialog(
-                                state = state,
-                                currentVersion = container.updates.currentVersion,
-                                onUpdate = container.updates::downloadAndInstall,
-                                onOpenPermission = { context.startActivity(container.updates.permissionIntent()) },
-                                onDismiss = container.updates::dismiss,
-                            )
+                        },
+                        bottomBar = { BottomBar(actions, shared) },
+                    ) { padding ->
+                        NavHost(
+                            navController = nav,
+                            startDestination = HomeRoute,
+                            enterTransition = { enterFor(settings.screenTransition) },
+                            exitTransition = { exitFor(settings.screenTransition) },
+                            popEnterTransition = { popEnterFor(settings.screenTransition) },
+                            popExitTransition = { popExitFor(settings.screenTransition) },
+                        ) {
+                            screen<HomeRoute> { HomeScreen(padding) }
+                            screen<SearchRoute> { SearchScreen(padding) }
+                            screen<LibraryRoute> { LibraryScreen(padding) }
+                            screen<AlbumRoute> { AlbumScreen(it.toRoute<AlbumRoute>().id, padding) }
+                            screen<ArtistRoute> { ArtistScreen(it.toRoute<ArtistRoute>().id, padding) }
+                            screen<PlaylistRoute> { RemotePlaylistScreen(it.toRoute<PlaylistRoute>().id, padding) }
+                            screen<LocalPlaylistRoute> { LocalPlaylistScreen(it.toRoute<LocalPlaylistRoute>().id, padding) }
+                            screen<com.lyra.music.ui.navigation.ErrorsRoute> { com.lyra.music.ui.settings.ErrorsScreen(padding) }
+                            screen<com.lyra.music.ui.navigation.FolderRoute> {
+                                com.lyra.music.ui.library.FolderScreen(it.toRoute<com.lyra.music.ui.navigation.FolderRoute>().id, padding)
+                            }
+                            screen<BrowseRoute> {
+                                val route = it.toRoute<BrowseRoute>()
+                                BrowseScreen(route.browseId, route.params, route.title, padding)
+                            }
+                            screen<LikedRoute> { LikedScreen(padding) }
+                            screen<DownloadsRoute> { DownloadsScreen(padding) }
+                            screen<HistoryRoute> { HistoryScreen(padding) }
+                            screen<SettingsRoute> { SettingsScreen(padding) }
+                            screen<EqualizerRoute> { EqualizerScreen(padding) }
+                            screen<IslandRoute> { IslandScreen(padding) }
                         }
                     }
-                    is UpdateState.UpToDate -> LaunchedEffect(state) {
-                        if (state.manual) actions.message("Tienes la última versión")
-                        container.updates.dismiss()
-                    }
-                    else -> Unit
-                }
-                whatsNew?.let { (version, notes) -> WhatsNewDialog(version, notes, onDismiss = { whatsNew = null }) }
-                crash?.let {
-                    androidx.compose.material3.AlertDialog(
-                        onDismissRequest = { crash = null },
-                        containerColor = LyraColors.Surface,
-                        title = { Text("Lyra se cerró de golpe", style = MaterialTheme.typography.headlineMedium) },
-                        text = {
-                            Text(
-                                "Ha quedado apuntado en el informe de errores. Si lo copias y lo pasas, se puede arreglar.",
-                                color = LyraColors.TextSecondary,
-                            )
-                        },
-                        confirmButton = {
-                            androidx.compose.material3.TextButton(onClick = {
-                                crash = null
-                                nav.navigate(com.lyra.music.ui.navigation.ErrorsRoute)
-                            }) { Text("Ver informe", color = LyraColors.Accent) }
-                        },
-                        dismissButton = {
-                            androidx.compose.material3.TextButton(onClick = { crash = null }) { Text("Ahora no", color = LyraColors.TextSecondary) }
-                        },
+
+                    // Franja oscura tras la barra de estado para que el contenido no se mezcle con la hora.
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .windowInsetsTopHeight(WindowInsets.statusBars)
+                            .background(LyraColors.Background.copy(alpha = 0.75f)),
                     )
+
+                    AnimatedVisibility(
+                        visible = actions.nowPlayingOpen,
+                        enter = slideInVertically(tween(420, easing = SmoothOut)) { it / 3 } + fadeIn(tween(260)),
+                        exit = slideOutVertically(tween(320)) { it / 3 } + fadeOut(tween(220)),
+                    ) {
+                        NowPlayingScreen(
+                            onClose = { actions.nowPlayingOpen = false },
+                            sharedScope = shared,
+                            visibilityScope = this,
+                        )
+                    }
+
+                    actions.songMenu?.let { request -> SongMenuSheet(request, onDismiss = { actions.songMenu = null }) }
+                    actions.addToPlaylist?.let { songs -> AddToPlaylistSheet(songs, onDismiss = { actions.addToPlaylist = null }) }
+                    actions.shareCard?.let { song ->
+                        com.lyra.music.ui.share.ShareCardDialog(song, onDismiss = { actions.shareCard = null })
+                    }
+                    actions.importDialog?.let { url ->
+                        com.lyra.music.ui.components.SpotifyImportDialog(url, onDismiss = { actions.importDialog = null })
+                    }
+
+                    when (val state = updateState) {
+                        is UpdateState.Available, is UpdateState.Downloading, is UpdateState.Installing,
+                        is UpdateState.NeedsPermission, is UpdateState.Failed -> {
+                            if (state is UpdateState.Failed && state.info == null) {
+                                // Fallo al comprobar: solo se avisa si lo pidió el usuario.
+                                LaunchedEffect(state) {
+                                    if (state.manual) actions.message("No se pudo comprobar: ${state.reason}")
+                                    container.updates.dismiss()
+                                }
+                            } else {
+                                UpdateDialog(
+                                    state = state,
+                                    currentVersion = container.updates.currentVersion,
+                                    onUpdate = container.updates::downloadAndInstall,
+                                    onOpenPermission = { context.startActivity(container.updates.permissionIntent()) },
+                                    onDismiss = container.updates::dismiss,
+                                )
+                            }
+                        }
+                        is UpdateState.UpToDate -> LaunchedEffect(state) {
+                            if (state.manual) actions.message("Tienes la última versión")
+                            container.updates.dismiss()
+                        }
+                        else -> Unit
+                    }
+                    whatsNew?.let { (version, notes) -> WhatsNewDialog(version, notes, onDismiss = { whatsNew = null }) }
+                    crash?.let {
+                        androidx.compose.material3.AlertDialog(
+                            onDismissRequest = { crash = null },
+                            containerColor = LyraColors.Surface,
+                            title = { Text("Lyra se cerró de golpe", style = MaterialTheme.typography.headlineMedium) },
+                            text = {
+                                Text(
+                                    "Ha quedado apuntado en el informe de errores. Si lo copias y lo pasas, se puede arreglar.",
+                                    color = LyraColors.TextSecondary,
+                                )
+                            },
+                            confirmButton = {
+                                androidx.compose.material3.TextButton(onClick = {
+                                    crash = null
+                                    nav.navigate(com.lyra.music.ui.navigation.ErrorsRoute)
+                                }) { Text("Ver informe", color = LyraColors.Accent) }
+                            },
+                            dismissButton = {
+                                androidx.compose.material3.TextButton(onClick = { crash = null }) { Text("Ahora no", color = LyraColors.TextSecondary) }
+                            },
+                        )
+                    }
                 }
             }
         }
@@ -416,5 +443,14 @@ private fun BottomBar(actions: LyraActions, shared: SharedTransitionScope) {
                 )
             }
         }
+    }
+}
+
+/** Destino del NavHost que da a su pantalla la animación con la que entra y sale. */
+private inline fun <reified T : Any> NavGraphBuilder.screen(
+    noinline content: @Composable (NavBackStackEntry) -> Unit,
+) {
+    composable<T> { entry ->
+        CompositionLocalProvider(LocalNavScope provides this) { content(entry) }
     }
 }

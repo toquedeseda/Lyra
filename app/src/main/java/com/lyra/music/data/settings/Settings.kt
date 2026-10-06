@@ -66,6 +66,11 @@ data class AppSettings(
     val language: String = "es",
     val region: String = "ES",
     val showLyrics: Boolean = true,
+    // Aspecto
+    /** Cómo se pasa de una pantalla a otra (se elige en Ajustes). */
+    val screenTransition: ScreenTransition = ScreenTransition.SMOOTH,
+    /** Barritas bajo la portada y pulso con el bajo en el reproductor. */
+    val visualizer: Boolean = true,
     // App
     val checkUpdates: Boolean = true,
     val lastSeenVersion: String = "",
@@ -132,6 +137,8 @@ class SettingsRepository(context: Context, scope: CoroutineScope) {
         language = p[K.language] ?: "es",
         region = p[K.region] ?: "ES",
         showLyrics = p[K.showLyrics] ?: true,
+        screenTransition = enumOr(p[K.screenTransition], ScreenTransition.SMOOTH),
+        visualizer = p[K.visualizer] ?: true,
         checkUpdates = p[K.checkUpdates] ?: true,
         lastSeenVersion = p[K.lastSeenVersion] ?: "",
         batteryTipDismissed = p[K.batteryTip] ?: false,
@@ -167,6 +174,8 @@ class SettingsRepository(context: Context, scope: CoroutineScope) {
         p[K.language] = s.language
         p[K.region] = s.region
         p[K.showLyrics] = s.showLyrics
+        p[K.screenTransition] = s.screenTransition.name
+        p[K.visualizer] = s.visualizer
         p[K.checkUpdates] = s.checkUpdates
         p[K.lastSeenVersion] = s.lastSeenVersion
         p[K.batteryTip] = s.batteryTipDismissed
@@ -204,6 +213,8 @@ class SettingsRepository(context: Context, scope: CoroutineScope) {
                 islandWidth = values["islandWidth"]?.toIntOrNull() ?: current.islandWidth,
                 islandHeight = values["islandHeight"]?.toIntOrNull() ?: current.islandHeight,
                 showLyrics = values["showLyrics"]?.toBooleanStrictOrNull() ?: current.showLyrics,
+                screenTransition = enumOr(values["screenTransition"], current.screenTransition),
+                visualizer = values["visualizer"]?.toBooleanStrictOrNull() ?: current.visualizer,
             )
             write(prefs, restored)
         }
@@ -242,8 +253,22 @@ class SettingsRepository(context: Context, scope: CoroutineScope) {
         val language = stringPreferencesKey("language")
         val region = stringPreferencesKey("region")
         val showLyrics = booleanPreferencesKey("showLyrics")
+        val screenTransition = stringPreferencesKey("screenTransition")
+        val visualizer = booleanPreferencesKey("visualizer")
         val checkUpdates = booleanPreferencesKey("checkUpdates")
         val lastSeenVersion = stringPreferencesKey("lastSeenVersion")
         val batteryTip = booleanPreferencesKey("batteryTip")
     }
+}
+
+/** Animación al cambiar de pantalla. */
+enum class ScreenTransition {
+    /** La de siempre, más suave: la pantalla nueva entra deslizándose un poco y la anterior se aparta. */
+    SMOOTH,
+
+    /** La portada que tocas vuela hasta la cabecera de la pantalla nueva. */
+    COVER,
+
+    /** Sin animación: cambio instantáneo. */
+    NONE,
 }

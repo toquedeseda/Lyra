@@ -84,6 +84,7 @@ import com.lyra.music.ui.components.reorderHandle
 import com.lyra.music.ui.components.reorderItem
 import com.lyra.music.ui.components.totalDurationText
 import com.lyra.music.ui.theme.LyraColors
+import com.lyra.music.ui.components.CollapsingTopBar
 
 @UnstableApi
 @Composable
@@ -95,34 +96,39 @@ fun LikedScreen(contentPadding: PaddingValues) {
     var query by rememberSaveable { mutableStateOf("") }
     var order by rememberSaveable { mutableStateOf(SongOrder.DEFAULT) }
     val shown = remember(songs, query, order) { songs.filterSongs(query, order) { it } }
+    val listState = rememberLazyListState()
 
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding() + 16.dp)) {
-        item {
-            CollectionHeader(
-                title = "Canciones que te gustan",
-                subtitle = null,
-                eyebrow = "Tu colección",
-                meta = totalDurationText(songs),
-                backdrop = songs.firstOrNull()?.thumbnailUrl,
-                cover = { SpecialCover(Icons.Rounded.Favorite, it, RoundedCornerShape(16.dp), filled = true) },
-                onPlay = { actions.play(songs, 0, from = from) },
-                onShuffle = { actions.shuffle(songs, from = from) },
-                contextId = from.id,
-            ) {
-                DownloadAllButton(songs, "Canciones que te gustan")
-                OutlineIconButton(Icons.AutoMirrored.Rounded.PlaylistAdd, "Añadir a playlist", onClick = { actions.addToPlaylist = songs })
+    Box(Modifier.fillMaxSize()) {
+        LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding() + 16.dp)) {
+            item {
+                CollectionHeader(
+                    title = "Canciones que te gustan",
+                    subtitle = null,
+                    eyebrow = "Tu colección",
+                    meta = totalDurationText(songs),
+                    backdrop = songs.firstOrNull()?.thumbnailUrl,
+                    cover = { SpecialCover(Icons.Rounded.Favorite, it, RoundedCornerShape(16.dp), filled = true) },
+                    onPlay = { actions.play(songs, 0, from = from) },
+                    onShuffle = { actions.shuffle(songs, from = from) },
+                    contextId = from.id,
+                    listState = listState,
+                ) {
+                    DownloadAllButton(songs, "Canciones que te gustan")
+                    OutlineIconButton(Icons.AutoMirrored.Rounded.PlaylistAdd, "Añadir a playlist", onClick = { actions.addToPlaylist = songs })
+                }
+            }
+            if (rows != null && songs.isEmpty()) {
+                item { EmptyView(Icons.Rounded.Favorite, "Aún no hay canciones", "Pulsa el corazón en cualquier canción para guardarla aquí.") }
+            }
+            if (songs.isNotEmpty()) {
+                item(key = "filter") { SongFilterBar(query, { query = it }, order, { order = it }, "Recientes") }
+                if (shown.isEmpty()) item { NoMatches(query) }
+            }
+            itemsIndexed(shown, key = { _, song -> song.id }) { index, song ->
+                SongRow(song, onClick = { actions.play(shown, index, from = from) }, modifier = Modifier.animateItem())
             }
         }
-        if (rows != null && songs.isEmpty()) {
-            item { EmptyView(Icons.Rounded.Favorite, "Aún no hay canciones", "Pulsa el corazón en cualquier canción para guardarla aquí.") }
-        }
-        if (songs.isNotEmpty()) {
-            item(key = "filter") { SongFilterBar(query, { query = it }, order, { order = it }, "Recientes") }
-            if (shown.isEmpty()) item { NoMatches(query) }
-        }
-        itemsIndexed(shown, key = { _, song -> song.id }) { index, song ->
-            SongRow(song, onClick = { actions.play(shown, index, from = from) }, modifier = Modifier.animateItem())
-        }
+        CollapsingTopBar(listState, "Canciones que te gustan", from.id, onPlay = { actions.play(songs, 0, from = from) })
     }
 }
 
@@ -146,65 +152,70 @@ fun DownloadsScreen(contentPadding: PaddingValues) {
     var order by rememberSaveable { mutableStateOf(SongOrder.DEFAULT) }
     val shownRows = remember(rows, query, order) { rows.orEmpty().filterSongs(query, order) { it.toSong() } }
     val shownCompleted = shownRows.filter { it.downloadState == DownloadState.COMPLETED }.map { it.toSong() }
+    val listState = rememberLazyListState()
 
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding() + 16.dp)) {
-        item {
-            CollectionHeader(
-                title = "Descargas",
-                subtitle = "${completed.size} canciones · ${formatBytes(total)}",
-                eyebrow = "Sin conexión",
-                meta = if (actions.container.settings.current.downloadsVisible) {
-                    "En la carpeta ${downloads.folder.displayPath}, con nombre y carátula. Suenan sin cobertura."
-                } else {
-                    "Guardadas dentro de Lyra. Suenan aunque no tengas cobertura."
-                },
-                backdrop = completed.firstOrNull()?.thumbnailUrl,
-                cover = { SpecialCover(Icons.Rounded.ArrowDownward, it, RoundedCornerShape(16.dp), filled = false) },
-                onPlay = { actions.play(completed, 0, from = from) },
-                onShuffle = { actions.shuffle(completed, from = from) },
-                contextId = from.id,
-            ) {
-                if (failed > 0) {
-                    OutlineIconButton(Icons.Rounded.Refresh, "Reintentar fallidas", onClick = { actions.launch { downloads.retryFailed() } })
-                }
-                if (all.isNotEmpty()) {
-                    OutlineIconButton(Icons.Rounded.DeleteSweep, "Borrar todas", onClick = { confirmClear = true })
-                }
-            }
-        }
-        if (rows != null && all.isEmpty()) {
-            item { EmptyView(Icons.Rounded.ArrowDownward, "Nada descargado todavía", "Descarga canciones, álbumes o playlists para escucharlos sin conexión.") }
-        }
-        if (stale.isNotEmpty()) {
-            item(key = "cleanup") { CleanupCard(stale, months, onReview = { cleaning = true }) }
-        }
-        if (all.isNotEmpty()) {
-            item(key = "filter") { SongFilterBar(query, { query = it }, order, { order = it }, "Recientes") }
-            if (shownRows.isEmpty()) item { NoMatches(query) }
-        }
-        itemsIndexed(shownRows, key = { _, row -> row.id }) { _, row ->
-            val song = row.toSong()
-            SongRow(
-                song,
-                onClick = {
-                    val index = shownCompleted.indexOfFirst { it.id == song.id }
-                    if (index >= 0) actions.play(shownCompleted, index, from = from) else actions.startRadio(song)
-                },
-                trailing = if (row.downloadState == DownloadState.FAILED) {
-                    {
-                        TextButton(onClick = { actions.download(listOf(song)) }) { Text("Reintentar", color = LyraColors.Accent, style = MaterialTheme.typography.labelLarge) }
+    Box(Modifier.fillMaxSize()) {
+        LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding() + 16.dp)) {
+            item {
+                CollectionHeader(
+                    title = "Descargas",
+                    subtitle = "${completed.size} canciones · ${formatBytes(total)}",
+                    eyebrow = "Sin conexión",
+                    meta = if (actions.container.settings.current.downloadsVisible) {
+                        "En la carpeta ${downloads.folder.displayPath}, con nombre y carátula. Suenan sin cobertura."
+                    } else {
+                        "Guardadas dentro de Lyra. Suenan aunque no tengas cobertura."
+                    },
+                    backdrop = completed.firstOrNull()?.thumbnailUrl,
+                    cover = { SpecialCover(Icons.Rounded.ArrowDownward, it, RoundedCornerShape(16.dp), filled = false) },
+                    onPlay = { actions.play(completed, 0, from = from) },
+                    onShuffle = { actions.shuffle(completed, from = from) },
+                    contextId = from.id,
+                    listState = listState,
+                ) {
+                    if (failed > 0) {
+                        OutlineIconButton(Icons.Rounded.Refresh, "Reintentar fallidas", onClick = { actions.launch { downloads.retryFailed() } })
                     }
-                } else null,
-            )
-            if (row.downloadState == DownloadState.FAILED && row.error != null) {
-                Text(
-                    row.error,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = LyraColors.TextTertiary,
-                    modifier = Modifier.padding(start = 78.dp, end = 16.dp, bottom = 6.dp),
+                    if (all.isNotEmpty()) {
+                        OutlineIconButton(Icons.Rounded.DeleteSweep, "Borrar todas", onClick = { confirmClear = true })
+                    }
+                }
+            }
+            if (rows != null && all.isEmpty()) {
+                item { EmptyView(Icons.Rounded.ArrowDownward, "Nada descargado todavía", "Descarga canciones, álbumes o playlists para escucharlos sin conexión.") }
+            }
+            if (stale.isNotEmpty()) {
+                item(key = "cleanup") { CleanupCard(stale, months, onReview = { cleaning = true }) }
+            }
+            if (all.isNotEmpty()) {
+                item(key = "filter") { SongFilterBar(query, { query = it }, order, { order = it }, "Recientes") }
+                if (shownRows.isEmpty()) item { NoMatches(query) }
+            }
+            itemsIndexed(shownRows, key = { _, row -> row.id }) { _, row ->
+                val song = row.toSong()
+                SongRow(
+                    song,
+                    onClick = {
+                        val index = shownCompleted.indexOfFirst { it.id == song.id }
+                        if (index >= 0) actions.play(shownCompleted, index, from = from) else actions.startRadio(song)
+                    },
+                    trailing = if (row.downloadState == DownloadState.FAILED) {
+                        {
+                            TextButton(onClick = { actions.download(listOf(song)) }) { Text("Reintentar", color = LyraColors.Accent, style = MaterialTheme.typography.labelLarge) }
+                        }
+                    } else null,
                 )
+                if (row.downloadState == DownloadState.FAILED && row.error != null) {
+                    Text(
+                        row.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = LyraColors.TextTertiary,
+                        modifier = Modifier.padding(start = 78.dp, end = 16.dp, bottom = 6.dp),
+                    )
+                }
             }
         }
+        CollapsingTopBar(listState, "Descargas", from.id, onPlay = { actions.play(completed, 0, from = from) })
     }
 
     if (confirmClear) {
@@ -324,178 +335,182 @@ fun LocalPlaylistScreen(id: Long, contentPadding: PaddingValues) {
     val songKeys = remember(songs) { songs.mapTo(HashSet()) { SongMatcher.songKey(it) } }
     val visibleRecs = recs.orEmpty().filter { it.id !in songIds && SongMatcher.songKey(it) !in songKeys }
 
-    LazyColumn(
-        state = listState,
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding() + 16.dp),
-    ) {
-        item {
-            CollectionHeader(
-                title = current?.name.orEmpty(),
-                subtitle = current?.description,
-                eyebrow = when {
-                    current?.remoteId?.startsWith("spotify:") == true -> "Playlist · De Spotify"
-                    current?.remoteId != null -> "Playlist · Importada"
-                    else -> "Playlist"
-                } + if (current?.syncEnabled == true) " · Sincronizada" else "",
-                meta = totalDurationText(songs),
-                backdrop = current?.customCover ?: covers.firstOrNull() ?: current?.coverUrl,
-                cover = {
-                    val custom = current?.customCover
-                    if (custom != null) {
-                        Artwork(custom, it, RoundedCornerShape(16.dp))
-                    } else {
-                        Mosaic(if (covers.size >= 4) covers else listOfNotNull(current?.coverUrl ?: covers.firstOrNull()), it, RoundedCornerShape(16.dp))
-                    }
-                },
-                onPlay = { actions.play(songs, 0, from = from) },
-                onShuffle = { actions.shuffle(songs, from = from) },
-                contextId = from?.id,
-            ) {
-                DownloadAllButton(songs, current?.name)
-                OutlineIconButton(
-                    Icons.Rounded.DragHandle,
-                    "Reordenar",
-                    onClick = {
-                        editing = !editing
-                        if (editing) {
-                            query = ""
-                            sortOrder = SongOrder.DEFAULT
+    Box(Modifier.fillMaxSize()) {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding() + 16.dp),
+        ) {
+            item {
+                CollectionHeader(
+                    title = current?.name.orEmpty(),
+                    subtitle = current?.description,
+                    eyebrow = when {
+                        current?.remoteId?.startsWith("spotify:") == true -> "Playlist · De Spotify"
+                        current?.remoteId != null -> "Playlist · Importada"
+                        else -> "Playlist"
+                    } + if (current?.syncEnabled == true) " · Sincronizada" else "",
+                    meta = totalDurationText(songs),
+                    backdrop = current?.customCover ?: covers.firstOrNull() ?: current?.coverUrl,
+                    cover = {
+                        val custom = current?.customCover
+                        if (custom != null) {
+                            Artwork(custom, it, RoundedCornerShape(16.dp))
+                        } else {
+                            Mosaic(if (covers.size >= 4) covers else listOfNotNull(current?.coverUrl ?: covers.firstOrNull()), it, RoundedCornerShape(16.dp))
                         }
                     },
-                    tint = if (editing) LyraColors.Accent else LyraColors.TextPrimary,
-                )
-                Row {
-                    OutlineIconButton(Icons.Rounded.Edit, "Editar", onClick = { menuOpen = true })
-                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }, containerColor = LyraColors.SurfaceHigh) {
-                        DropdownMenuItem(text = { Text("Cambiar nombre") }, onClick = { menuOpen = false; renaming = true })
-                        DropdownMenuItem(
-                            text = { Text("Cambiar portada") },
-                            onClick = {
-                                menuOpen = false
-                                pickCover.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                            },
-                        )
-                        if (current?.customCover != null) {
-                            DropdownMenuItem(
-                                text = { Text("Quitar portada") },
-                                onClick = {
-                                    menuOpen = false
-                                    actions.launch { library.removePlaylistCover(id) }
-                                },
-                            )
-                        }
-                        DropdownMenuItem(text = { Text("Mover a carpeta…") }, onClick = { menuOpen = false; moving = true })
-                        if (current?.remoteId != null) {
-                            DropdownMenuItem(
-                                text = { Text("Buscar canciones nuevas ahora") },
-                                leadingIcon = { Icon(Icons.Rounded.Sync, null) },
-                                onClick = {
-                                    menuOpen = false
-                                    syncing = true
-                                    actions.launch {
-                                        runCatching { actions.container.playlistSync.sync(current) }
-                                            .onSuccess { actions.message(if (it.added == 0) "Ya está al día" else "${it.added} canciones nuevas") }
-                                            .onFailure { actions.message("No se pudo sincronizar") }
-                                        syncing = false
-                                    }
-                                },
-                            )
-                            DropdownMenuItem(
-                                text = { Text(if (current.syncEnabled) "✓ Mantener sincronizada" else "Mantener sincronizada") },
-                                onClick = {
-                                    menuOpen = false
-                                    actions.launch { library.setPlaylistSync(id, !current.syncEnabled, current.autoDownload) }
-                                },
-                            )
-                            DropdownMenuItem(
-                                text = { Text(if (current.autoDownload) "✓ Descargar canciones nuevas" else "Descargar canciones nuevas") },
-                                onClick = {
-                                    menuOpen = false
-                                    actions.launch { library.setPlaylistSync(id, true, !current.autoDownload) }
-                                },
-                            )
-                        }
-                        DropdownMenuItem(text = { Text("Eliminar playlist") }, onClick = { menuOpen = false; deleting = true })
-                    }
-                }
-            }
-        }
-        if (rows != null && songs.isEmpty()) {
-            item { EmptyView(Icons.Rounded.MusicOff, "Playlist vacía", "Añade canciones desde su menú (⋮ → Añadir a playlist).") }
-        }
-        if (songs.isNotEmpty()) {
-            item(key = "filter") {
-                SongFilterBar(
-                    query,
-                    { query = it; if (it.isNotBlank()) editing = false },
-                    sortOrder,
-                    { sortOrder = it; if (it != SongOrder.DEFAULT) editing = false },
-                    "Tu orden",
-                )
-            }
-            if (shown.isEmpty()) item { NoMatches(query) }
-        }
-        itemsIndexed(shown, key = { _, song -> song.id }) { index, song ->
-            SongRow(
-                song,
-                onClick = { if (!editing) actions.play(shown.toList(), index, from = from) },
-                modifier = if (filtering) Modifier else Modifier.reorderItem(reorder, index),
-                localPlaylistId = id,
-                trailing = if (editing) {
-                    {
-                        Icon(
-                            Icons.Rounded.DragHandle,
-                            "Arrastrar",
-                            tint = LyraColors.TextSecondary,
-                            modifier = Modifier
-                                .padding(12.dp)
-                                .size(24.dp)
-                                .reorderHandle(reorder, index),
-                        )
-                    }
-                } else null,
-            )
-        }
-
-        // Recomendadas: canciones parecidas para añadir con un toque.
-        if (hasSongs && !filtering && !editing && online) {
-            item(key = "recs-header") {
-                SectionHeader(
-                    "Recomendadas",
-                    "Según lo que hay en esta playlist",
-                    onMore = if (recs != null) ({ recsRound++ }) else null,
-                    moreLabel = "Otras",
-                )
-            }
-            when {
-                recs == null -> item(key = "recs-loading") {
-                    Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(Modifier.size(24.dp), color = LyraColors.Accent, strokeWidth = 2.dp)
-                    }
-                }
-                visibleRecs.isEmpty() -> item(key = "recs-empty") {
-                    Text(
-                        "Ahora mismo no encuentro recomendaciones. Prueba con «Otras».",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = LyraColors.TextSecondary,
-                        modifier = Modifier.padding(horizontal = 20.dp),
-                    )
-                }
-                else -> itemsIndexed(visibleRecs, key = { _, song -> "rec-${song.id}" }) { index, song ->
-                    SongRow(
-                        song,
-                        onClick = { actions.play(visibleRecs, index, fromLabel = "Recomendadas para ${current?.name.orEmpty()}") },
-                        modifier = Modifier.animateItem(),
-                        trailing = {
-                            IconButton(onClick = { actions.addToPlaylist(id, listOf(song), current?.name ?: "la playlist") }) {
-                                Icon(Icons.Rounded.AddCircleOutline, "Añadir a la playlist", tint = LyraColors.TextSecondary)
+                    onPlay = { actions.play(songs, 0, from = from) },
+                    onShuffle = { actions.shuffle(songs, from = from) },
+                    contextId = from?.id,
+                    listState = listState,
+                ) {
+                    DownloadAllButton(songs, current?.name)
+                    OutlineIconButton(
+                        Icons.Rounded.DragHandle,
+                        "Reordenar",
+                        onClick = {
+                            editing = !editing
+                            if (editing) {
+                                query = ""
+                                sortOrder = SongOrder.DEFAULT
                             }
                         },
+                        tint = if (editing) LyraColors.Accent else LyraColors.TextPrimary,
                     )
+                    Row {
+                        OutlineIconButton(Icons.Rounded.Edit, "Editar", onClick = { menuOpen = true })
+                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }, containerColor = LyraColors.SurfaceHigh) {
+                            DropdownMenuItem(text = { Text("Cambiar nombre") }, onClick = { menuOpen = false; renaming = true })
+                            DropdownMenuItem(
+                                text = { Text("Cambiar portada") },
+                                onClick = {
+                                    menuOpen = false
+                                    pickCover.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                                },
+                            )
+                            if (current?.customCover != null) {
+                                DropdownMenuItem(
+                                    text = { Text("Quitar portada") },
+                                    onClick = {
+                                        menuOpen = false
+                                        actions.launch { library.removePlaylistCover(id) }
+                                    },
+                                )
+                            }
+                            DropdownMenuItem(text = { Text("Mover a carpeta…") }, onClick = { menuOpen = false; moving = true })
+                            if (current?.remoteId != null) {
+                                DropdownMenuItem(
+                                    text = { Text("Buscar canciones nuevas ahora") },
+                                    leadingIcon = { Icon(Icons.Rounded.Sync, null) },
+                                    onClick = {
+                                        menuOpen = false
+                                        syncing = true
+                                        actions.launch {
+                                            runCatching { actions.container.playlistSync.sync(current) }
+                                                .onSuccess { actions.message(if (it.added == 0) "Ya está al día" else "${it.added} canciones nuevas") }
+                                                .onFailure { actions.message("No se pudo sincronizar") }
+                                            syncing = false
+                                        }
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(if (current.syncEnabled) "✓ Mantener sincronizada" else "Mantener sincronizada") },
+                                    onClick = {
+                                        menuOpen = false
+                                        actions.launch { library.setPlaylistSync(id, !current.syncEnabled, current.autoDownload) }
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(if (current.autoDownload) "✓ Descargar canciones nuevas" else "Descargar canciones nuevas") },
+                                    onClick = {
+                                        menuOpen = false
+                                        actions.launch { library.setPlaylistSync(id, true, !current.autoDownload) }
+                                    },
+                                )
+                            }
+                            DropdownMenuItem(text = { Text("Eliminar playlist") }, onClick = { menuOpen = false; deleting = true })
+                        }
+                    }
+                }
+            }
+            if (rows != null && songs.isEmpty()) {
+                item { EmptyView(Icons.Rounded.MusicOff, "Playlist vacía", "Añade canciones desde su menú (⋮ → Añadir a playlist).") }
+            }
+            if (songs.isNotEmpty()) {
+                item(key = "filter") {
+                    SongFilterBar(
+                        query,
+                        { query = it; if (it.isNotBlank()) editing = false },
+                        sortOrder,
+                        { sortOrder = it; if (it != SongOrder.DEFAULT) editing = false },
+                        "Tu orden",
+                    )
+                }
+                if (shown.isEmpty()) item { NoMatches(query) }
+            }
+            itemsIndexed(shown, key = { _, song -> song.id }) { index, song ->
+                SongRow(
+                    song,
+                    onClick = { if (!editing) actions.play(shown.toList(), index, from = from) },
+                    modifier = if (filtering) Modifier else Modifier.reorderItem(reorder, index),
+                    localPlaylistId = id,
+                    trailing = if (editing) {
+                        {
+                            Icon(
+                                Icons.Rounded.DragHandle,
+                                "Arrastrar",
+                                tint = LyraColors.TextSecondary,
+                                modifier = Modifier
+                                    .padding(12.dp)
+                                    .size(24.dp)
+                                    .reorderHandle(reorder, index),
+                            )
+                        }
+                    } else null,
+                )
+            }
+
+            // Recomendadas: canciones parecidas para añadir con un toque.
+            if (hasSongs && !filtering && !editing && online) {
+                item(key = "recs-header") {
+                    SectionHeader(
+                        "Recomendadas",
+                        "Según lo que hay en esta playlist",
+                        onMore = if (recs != null) ({ recsRound++ }) else null,
+                        moreLabel = "Otras",
+                    )
+                }
+                when {
+                    recs == null -> item(key = "recs-loading") {
+                        Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(Modifier.size(24.dp), color = LyraColors.Accent, strokeWidth = 2.dp)
+                        }
+                    }
+                    visibleRecs.isEmpty() -> item(key = "recs-empty") {
+                        Text(
+                            "Ahora mismo no encuentro recomendaciones. Prueba con «Otras».",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = LyraColors.TextSecondary,
+                            modifier = Modifier.padding(horizontal = 20.dp),
+                        )
+                    }
+                    else -> itemsIndexed(visibleRecs, key = { _, song -> "rec-${song.id}" }) { index, song ->
+                        SongRow(
+                            song,
+                            onClick = { actions.play(visibleRecs, index, fromLabel = "Recomendadas para ${current?.name.orEmpty()}") },
+                            modifier = Modifier.animateItem(),
+                            trailing = {
+                                IconButton(onClick = { actions.addToPlaylist(id, listOf(song), current?.name ?: "la playlist") }) {
+                                    Icon(Icons.Rounded.AddCircleOutline, "Añadir a la playlist", tint = LyraColors.TextSecondary)
+                                }
+                            },
+                        )
+                    }
                 }
             }
         }
+        CollapsingTopBar(listState, current?.name.orEmpty(), from?.id, onPlay = { actions.play(songs, 0, from = from) })
     }
 
     if (moving && current != null) {

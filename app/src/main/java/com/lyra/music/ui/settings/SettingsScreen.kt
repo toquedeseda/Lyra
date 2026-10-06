@@ -65,6 +65,7 @@ import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.lyra.music.data.settings.ScreenTransition
 
 @UnstableApi
 @Composable
@@ -80,6 +81,7 @@ fun SettingsScreen(contentPadding: PaddingValues) {
 
     var qualityDialog by remember { mutableStateOf<String?>(null) }
     var regionDialog by remember { mutableStateOf(false) }
+    var transitionDialog by remember { mutableStateOf(false) }
     var confirmDownloads by remember { mutableStateOf(false) }
     var confirmHistory by remember { mutableStateOf(false) }
     var includeDownloads by remember { mutableStateOf(false) }
@@ -176,6 +178,16 @@ fun SettingsScreen(contentPadding: PaddingValues) {
                 }
             }
             item { NavRow("Borrar todas las descargas", formatBytes(downloadBytes)) { confirmDownloads = true } }
+
+            item { Group("Aspecto") }
+            item { NavRow("Animación entre pantallas", transitionLabel(s.screenTransition)) { transitionDialog = true } }
+            item {
+                SwitchRow(
+                    "Barritas de música",
+                    "En el reproductor, unas barritas bajo la portada se mueven con la música y la portada sigue el bajo.",
+                    s.visualizer,
+                ) { v -> update { it.copy(visualizer = v) } }
+            }
 
             item { Group("Isla, widget y pantalla de bloqueo") }
             item { NavRow("Isla flotante", if (s.islandEnabled) "Activada" else "Desactivada") { actions.nav.navigate(IslandRoute) } }
@@ -285,6 +297,18 @@ fun SettingsScreen(contentPadding: PaddingValues) {
             staleDialog = false
         }
     }
+    if (transitionDialog) {
+        val options = ScreenTransition.entries
+        ChoiceDialog(
+            title = "Animación entre pantallas",
+            options = options.map { transitionLabel(it) to transitionDescription(it) },
+            selected = options.indexOf(s.screenTransition),
+            onDismiss = { transitionDialog = false },
+        ) { index ->
+            update { it.copy(screenTransition = options[index]) }
+            transitionDialog = false
+        }
+    }
     if (regionDialog) {
         ChoiceDialog(
             title = "País del contenido",
@@ -313,6 +337,18 @@ private val REGIONS = listOf(
     "ES" to "España", "MX" to "México", "AR" to "Argentina", "CO" to "Colombia", "CL" to "Chile",
     "PE" to "Perú", "US" to "Estados Unidos", "GB" to "Reino Unido", "PR" to "Puerto Rico",
 )
+
+private fun transitionLabel(style: ScreenTransition) = when (style) {
+    ScreenTransition.SMOOTH -> "Suave (recomendada)"
+    ScreenTransition.COVER -> "Portada que vuela"
+    ScreenTransition.NONE -> "Sin animación"
+}
+
+private fun transitionDescription(style: ScreenTransition) = when (style) {
+    ScreenTransition.SMOOTH -> "Como siempre, pero más fluida: la pantalla nueva entra deslizándose un poco."
+    ScreenTransition.COVER -> "Al abrir un álbum o una playlist, su portada viaja hasta arriba y crece."
+    ScreenTransition.NONE -> "Cambia de pantalla al instante."
+}
 
 private fun regionName(code: String) = REGIONS.firstOrNull { it.first == code }?.second ?: code
 

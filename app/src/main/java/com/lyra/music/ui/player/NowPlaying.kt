@@ -147,6 +147,7 @@ fun NowPlayingScreen(
     val liked = LocalLibraryState.current.likedIds
     val song = state.song
     val lyrics = rememberLyrics(song)
+    val motion = rememberMusicMotion(state.isPlaying, settings.visualizer)
 
     BackHandler(onBack = onClose)
 
@@ -254,7 +255,7 @@ fun NowPlayingScreen(
             }
             Box(
                 Modifier
-                    .padding(horizontal = 28.dp, vertical = 22.dp)
+                    .padding(start = 28.dp, end = 28.dp, top = 22.dp, bottom = if (settings.visualizer) 12.dp else 22.dp)
                     .fillMaxWidth()
                     .aspectRatio(1f)
                     .graphicsLayer {
@@ -283,9 +284,26 @@ fun NowPlayingScreen(
                     cover,
                     sharedArt
                         .fillMaxSize()
+                        .graphicsLayer {
+                            // Pulso con el bajo (solo si están puestas las barritas).
+                            val scale = motion.coverScale()
+                            scaleX = scale
+                            scaleY = scale
+                        }
                         .shadow(32.dp, artShape, ambientColor = Color.Black, spotColor = Color.Black),
                     artShape,
                 )
+            }
+            if (settings.visualizer) {
+                MusicBars(
+                    motion,
+                    state.isPlaying,
+                    Modifier
+                        .padding(horizontal = 28.dp)
+                        .fillMaxWidth()
+                        .height(26.dp),
+                )
+                Spacer(Modifier.height(12.dp))
             }
 
             // Título en serif, artista y corazón

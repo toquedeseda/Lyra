@@ -24,8 +24,8 @@ import com.lyra.music.update.UpdateInfo
 import java.util.concurrent.TimeUnit
 
 /**
- * Tareas en segundo plano cada 6 horas:
- *  - Mirar si hay versión nueva de Lyra en GitHub y avisar con una notificación.
+ * Tareas en segundo plano cada 6 horas (las actualizaciones van aparte, en [UpdateCheckWorker]):
+ *  - Una vez al mes: avisar de las descargas que no escuchas.
  *  - Cada 12 horas: lanzamientos de tus artistas y playlists sincronizadas.
  */
 class MaintenanceWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
@@ -35,14 +35,6 @@ class MaintenanceWorker(context: Context, params: WorkerParameters) : CoroutineW
 
     override suspend fun doWork(): Result {
         val settings = container.settings.loaded()
-        if (settings.checkUpdates) {
-            runCatching { container.updates.latestIfNewer() }.getOrNull()?.let { info ->
-                if (container.updates.shouldNotify(info.version)) {
-                    Notifier.update(applicationContext, info)
-                    container.updates.markNotified(info.version)
-                }
-            }
-        }
         val now = System.currentTimeMillis()
         // Una vez al mes como mucho: descargas que llevas meses sin escuchar.
         if (settings.staleDownloadMonths > 0 && now - prefs.getLong("cleanup_at", 0) > 30 * 86_400_000L) {
@@ -80,12 +72,40 @@ class MaintenanceWorker(context: Context, params: WorkerParameters) : CoroutineW
         private const val NAME = "lyra-maintenance"
 
         fun schedule(context: Context) {
+            val network = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
             val request = PeriodicWorkRequestBuilder<MaintenanceWorker>(6, TimeUnit.HOURS)
-                .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+                .setConstraints(network)
                 .setInitialDelay(20, TimeUnit.MINUTES)
                 .build()
-            WorkManager.getInstance(context).enqueueUniquePeriodicWork(NAME, ExistingPeriodicWorkPolicy.KEEP, request)
+            val manager = WorkManager.getInstance(context)
+            manager.enqueueUniquePeriodicWork(NAME, ExistingPeriodicWorkPolicy.KEEP, request)
+            // Las actualizaciones, cada 15 minutos (lo mínimo que deja Android) para avisar casi al momento.
+            val updates = PeriodicWorkRequestBuilder<UpdateCheckWorker>(15, TimeUnit.MINUTES)
+                .setConstraints(network)
+                .build()
+            manager.enqueueUniquePeriodicWork(UpdateCheckWorker.NAME, ExistingPeriodicWorkPolicy.KEEP, updates)
         }
+    }
+}
+
+/** Mira si hay versión nueva de Lyra en GitHub y avisa con una notificación (una vez por versión). */
+class UpdateCheckWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
+
+    private val container = (context.applicationContext as LyraApp).container
+
+    override suspend fun doWork(): Result {
+        if (!container.settings.loaded().checkUpdates) return Result.success()
+        runCatching { container.updates.latestIfNewer() }.getOrNull()?.let { info ->
+            if (container.updates.shouldNotify(info.version)) {
+                Notifier.update(applicationContext, info)
+                container.updates.markNotified(info.version)
+            }
+        }
+        return Result.success()
+    }
+
+    companion object {
+        const val NAME = "lyra-update-check"
     }
 }
 

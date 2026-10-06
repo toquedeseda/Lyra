@@ -37,6 +37,10 @@ import com.lyra.music.ui.components.SongRow
 import com.lyra.music.ui.components.totalDurationText
 import com.lyra.music.ui.navigation.LocalPlaylistRoute
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.layout.Box
+import com.lyra.music.ui.components.CollapsingTopBar
+import com.lyra.music.ui.components.CollectionSkeleton
+import com.lyra.music.ui.components.LoadableCrossfade
 
 @UnstableApi
 class RemotePlaylistViewModel(private val container: AppContainer, private val id: String) : LoadViewModel<PlaylistPage>() {
@@ -71,46 +75,55 @@ fun RemotePlaylistScreen(id: String, contentPadding: PaddingValues) {
     val actions = LocalActions.current
     val vm: RemotePlaylistViewModel = viewModel(key = id) { RemotePlaylistViewModel(actions.container, id) }
     val state by vm.state.collectAsState()
+    // Si abrió cargando, la portada voló a la pantalla de carga: la cabecera ya no la recibe.
+    val openedLoading = remember { state is Loadable.Loading }
     val listState = rememberLazyListState()
     val nearEnd by remember { derivedStateOf { (listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0) >= listState.layoutInfo.totalItemsCount - 5 } }
     LaunchedEffect(nearEnd, state) { if (nearEnd) vm.loadMore() }
 
-    when (val s = state) {
-        Loadable.Loading -> Column { BackBar(); LoadingView() }
-        is Loadable.Error -> Column { BackBar(); ErrorView(s.message, onRetry = vm::load) }
-        is Loadable.Ready -> {
-            val page = s.value
-            val playlist = page.playlist
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding() + 24.dp),
-            ) {
-                item {
-                    CollectionHeader(
-                        title = playlist.title,
-                        subtitle = playlist.author,
-                        eyebrow = if (Source.of(playlist.id) == Source.SOUNDCLOUD) "Playlist · SoundCloud" else "Playlist",
-                        meta = page.subtitle ?: totalDurationText(page.songs),
-                        description = page.description,
-                        backdrop = playlist.thumbnailUrl,
-                        cover = { Artwork(playlist.thumbnailUrl, it, RoundedCornerShape(16.dp)) },
-                        onPlay = { actions.play(page.songs, 0, from = playlist) },
-                        onShuffle = { actions.shuffle(page.songs, from = playlist) },
-                        contextId = playlist.id,
+    LoadableCrossfade(state) { loaded ->
+        when (val s = loaded) {
+            Loadable.Loading -> CollectionSkeleton(coverId = id)
+            is Loadable.Error -> Column { BackBar(); ErrorView(s.message, onRetry = vm::load) }
+            is Loadable.Ready -> {
+                val page = s.value
+                val playlist = page.playlist
+                Box(Modifier.fillMaxSize()) {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding() + 24.dp),
                     ) {
-                        OutlineIconButton(Icons.Rounded.Add, "Guardar en la biblioteca", onClick = {
-                            actions.launch {
-                                val songs = runCatching { vm.allSongs() }.getOrDefault(page.songs)
-                                val localId = actions.container.library.importPlaylist(playlist, songs)
-                                actions.message("Guardada en tu biblioteca", "Abrir") { actions.nav.navigate(LocalPlaylistRoute(localId)) }
+                        item {
+                            CollectionHeader(
+                                title = playlist.title,
+                                subtitle = playlist.author,
+                                eyebrow = if (Source.of(playlist.id) == Source.SOUNDCLOUD) "Playlist · SoundCloud" else "Playlist",
+                                meta = page.subtitle ?: totalDurationText(page.songs),
+                                description = page.description,
+                                backdrop = playlist.thumbnailUrl,
+                                cover = { Artwork(playlist.thumbnailUrl, it, RoundedCornerShape(16.dp)) },
+                                onPlay = { actions.play(page.songs, 0, from = playlist) },
+                                onShuffle = { actions.shuffle(page.songs, from = playlist) },
+                                contextId = playlist.id,
+                                listState = listState,
+                                flyTarget = !openedLoading,
+                            ) {
+                                OutlineIconButton(Icons.Rounded.Add, "Guardar en la biblioteca", onClick = {
+                                    actions.launch {
+                                        val songs = runCatching { vm.allSongs() }.getOrDefault(page.songs)
+                                        val localId = actions.container.library.importPlaylist(playlist, songs)
+                                        actions.message("Guardada en tu biblioteca", "Abrir") { actions.nav.navigate(LocalPlaylistRoute(localId)) }
+                                    }
+                                })
+                                DownloadAllButton(page.songs, playlist.title)
                             }
-                        })
-                        DownloadAllButton(page.songs, playlist.title)
+                        }
+                        itemsIndexed(page.songs, key = { _, song -> song.id }) { index, song ->
+                            SongRow(song, onClick = { actions.play(page.songs, index, from = playlist) })
+                        }
                     }
-                }
-                itemsIndexed(page.songs, key = { _, song -> song.id }) { index, song ->
-                    SongRow(song, onClick = { actions.play(page.songs, index, from = playlist) })
+                    CollapsingTopBar(listState, playlist.title, playlist.id, onPlay = { actions.play(page.songs, 0, from = playlist) })
                 }
             }
         }

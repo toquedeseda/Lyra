@@ -69,6 +69,10 @@ import com.lyra.music.ui.navigation.DownloadsRoute
 import com.lyra.music.ui.navigation.LikedRoute
 import com.lyra.music.ui.navigation.LocalPlaylistRoute
 import com.lyra.music.ui.theme.LyraColors
+import com.lyra.music.ui.components.CoverFlight
+import com.lyra.music.ui.components.flyingCover
+import com.lyra.music.ui.components.rememberCoverTag
+import com.lyra.music.data.repo.localPlaylistId
 
 @UnstableApi
 @Composable
@@ -304,14 +308,18 @@ fun LibraryScreen(contentPadding: PaddingValues) {
 @Composable
 fun PlaylistRow(playlist: PlaylistSummary, modifier: Modifier = Modifier) {
     val actions = LocalActions.current
+    val tag = rememberCoverTag(localPlaylistId(playlist.id))
     Row(
         modifier
             .fillMaxWidth()
-            .pressable(pressedScale = 0.985f) { actions.nav.navigate(LocalPlaylistRoute(playlist.id)) }
+            .pressable(pressedScale = 0.985f) {
+                CoverFlight.take(tag, playlist.customCover ?: playlist.coverUrl)
+                actions.nav.navigate(LocalPlaylistRoute(playlist.id))
+            }
             .padding(horizontal = 20.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        PlaylistCover(playlist, Modifier.size(56.dp))
+        PlaylistCover(playlist, Modifier.size(56.dp).flyingCover(tag, RoundedCornerShape(10.dp)))
         Spacer(Modifier.width(14.dp))
         Column {
             Text(playlist.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)

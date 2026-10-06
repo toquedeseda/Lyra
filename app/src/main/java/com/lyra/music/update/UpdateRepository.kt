@@ -93,26 +93,42 @@ class UpdateRepository(
 
     val currentVersion: String get() = BuildConfig.VERSION_NAME.substringBefore("-")
 
-    /** Sin [force], como mucho una consulta cada 12 h (el límite anónimo de GitHub es bajo). */
+    /** Versión cuyo aviso se ha cerrado: no vuelve a salir hasta que se abra la app otra vez. */
+    @Volatile private var dismissedVersion: String? = null
+
+    /**
+     * Mira si hay versión nueva. La app lo llama al abrirse, al volver a ella y cada pocos
+     * minutos, así que una versión publicada sale casi al momento. Sin [force], como mucho
+     * una consulta por minuto; y con el ETag, si nada ha cambiado GitHub responde «igual
+     * que antes» (304), que no gasta de su límite de consultas.
+     */
     fun check(force: Boolean = false) {
-        if (_state.value is UpdateState.Checking || _state.value is UpdateState.Downloading) return
+        val busy = _state.value
+        if (busy is UpdateState.Checking || busy is UpdateState.Downloading || busy is UpdateState.Installing) return
+        // Con el aviso abierto no hace falta mirar (salvo que lo pida el usuario).
+        if (!force && busy is UpdateState.Available) return
         val last = prefs.getLong("checked_at", 0)
-        if (!force && System.currentTimeMillis() - last < 12 * 3_600_000L) {
-            cachedAvailable()?.let { _state.value = UpdateState.Available(it) }
-            return
-        }
+        if (!force && System.currentTimeMillis() - last < 60_000L) return
+        if (force) dismissedVersion = null
         _state.value = UpdateState.Checking
         scope.launch {
             _state.value = try {
-                val release = fetch("https://api.github.com/repos/${BuildConfig.UPDATE_REPO}/releases/latest")
+                val release = fetch(LATEST, conditional = true)
                 prefs.edit().putLong("checked_at", System.currentTimeMillis()).apply()
                 val info = release.toInfo()
-                if (info != null && VersionComparator.isNewer(currentVersion, info.version)) {
-                    remember(info)
-                    UpdateState.Available(info)
-                } else {
-                    forget()
-                    UpdateState.UpToDate(manual = force)
+                when {
+                    info == null || !VersionComparator.isNewer(currentVersion, info.version) -> {
+                        forget()
+                        UpdateState.UpToDate(manual = force)
+                    }
+                    !force && info.version == dismissedVersion -> {
+                        remember(info)
+                        UpdateState.Idle
+                    }
+                    else -> {
+                        remember(info)
+                        UpdateState.Available(info)
+                    }
                 }
             } catch (e: Exception) {
                 UpdateState.Failed(e.message ?: "No se pudo comprobar", manual = force)
@@ -122,7 +138,7 @@ class UpdateRepository(
 
     /** Para la comprobación en segundo plano: la versión nueva, o null si no hay. */
     suspend fun latestIfNewer(): UpdateInfo? {
-        val info = fetch("https://api.github.com/repos/${BuildConfig.UPDATE_REPO}/releases/latest").toInfo() ?: return null
+        val info = fetch(LATEST, conditional = true).toInfo() ?: return null
         prefs.edit().putLong("checked_at", System.currentTimeMillis()).apply()
         if (!VersionComparator.isNewer(currentVersion, info.version)) return null
         remember(info)
@@ -145,14 +161,16 @@ class UpdateRepository(
     }
 
     fun dismiss() {
-        if (_state.value !is UpdateState.Downloading && _state.value !is UpdateState.Installing) {
+        val current = _state.value
+        if (current is UpdateState.Available) dismissedVersion = current.info.version
+        if (current !is UpdateState.Downloading && current !is UpdateState.Installing) {
             _state.value = UpdateState.Idle
         }
     }
 
     /** Notas de la versión instalada, para el "Novedades" tras actualizar. */
     suspend fun notesFor(version: String): String? = runCatching {
-        fetch("https://api.github.com/repos/${BuildConfig.UPDATE_REPO}/releases/tags/v$version").body
+        fetch("https://api.github.com/repos/${BuildConfig.UPDATE_REPO}/releases/tags/v$version").body?.withoutInstallGuide()
     }.getOrNull()?.takeIf { it.isNotBlank() }
 
     fun downloadAndInstall(info: UpdateInfo) {
@@ -252,27 +270,43 @@ class UpdateRepository(
     }
 
     // En un hilo de red: Android no deja hacer peticiones desde el hilo principal.
-    private suspend fun fetch(url: String): Release = withContext(Dispatchers.IO) {
+    // Con [conditional] se manda el ETag de la última respuesta: si no hay nada nuevo, GitHub
+    // contesta 304 y se usa la que ya teníamos.
+    private suspend fun fetch(url: String, conditional: Boolean = false): Release = withContext(Dispatchers.IO) {
+        val etag = if (conditional) prefs.getString("etag", null) else null
+        val cached = if (conditional) prefs.getString("latest_json", null) else null
         val request = Request.Builder().url(url)
             .header("Accept", "application/vnd.github+json")
             .header("User-Agent", "Lyra-Updater")
+            .apply { if (etag != null && cached != null) header("If-None-Match", etag) }
             .build()
         http.newCall(request).execute().use { response ->
             when (response.code) {
                 200 -> Unit
+                304 -> if (cached != null) return@withContext json.decodeFromString(Release.serializer(), cached)
                 403, 429 -> throw IOException("GitHub ha limitado las consultas, prueba más tarde")
                 404 -> throw IOException("Todavía no hay versiones publicadas")
                 else -> throw IOException("GitHub respondió ${response.code}")
             }
-            json.decodeFromString(Release.serializer(), response.body.string())
+            if (response.code == 304) throw IOException("GitHub respondió 304 sin copia guardada")
+            val body = response.body.string()
+            if (conditional) {
+                prefs.edit().putString("etag", response.header("ETag")).putString("latest_json", body).apply()
+            }
+            json.decodeFromString(Release.serializer(), body)
         }
     }
+
+    private val LATEST get() = "https://api.github.com/repos/${BuildConfig.UPDATE_REPO}/releases/latest"
 
     private fun Release.toInfo(): UpdateInfo? {
         if (draft || prerelease) return null
         val apk = assets.firstOrNull { it.name.endsWith(".apk", ignoreCase = true) } ?: return null
-        return UpdateInfo(tag_name.removePrefix("v"), body.orEmpty().trim(), apk.browser_download_url, apk.size, html_url)
+        return UpdateInfo(tag_name.removePrefix("v"), body.orEmpty().withoutInstallGuide(), apk.browser_download_url, apk.size, html_url)
     }
+
+    /** Las notas en GitHub llevan detrás la guía para instalarla por primera vez: en la app sobra. */
+    private fun String.withoutInstallGuide(): String = substringBefore("<!-- instalar -->").trim()
 
     private fun remember(info: UpdateInfo) {
         prefs.edit()

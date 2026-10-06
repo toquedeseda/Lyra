@@ -56,6 +56,15 @@ import com.lyra.music.data.model.Song
 import com.lyra.music.ui.LocalActions
 import com.lyra.music.ui.LocalLibraryState
 import com.lyra.music.ui.theme.LyraColors
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
 
 /** Fila superior con botón atrás (título pequeño opcional). */
 @UnstableApi
@@ -146,6 +155,10 @@ fun CollectionHeader(
     backdrop: Any? = null,
     /** Id de la lista en el reproductor: si es la que suena, play hace de pausa y el aleatorio se enciende sin reiniciar. */
     contextId: String? = null,
+    /** Lista de la pantalla: al bajar, la portada se encoge y se desvanece. */
+    listState: LazyListState? = null,
+    /** Si la portada tocada vuela hasta aquí (no, si ya voló a la pantalla de carga). */
+    flyTarget: Boolean = true,
     actionsRow: @Composable RowScope.() -> Unit = {},
 ) {
     Box(Modifier.fillMaxWidth()) {
@@ -156,6 +169,8 @@ fun CollectionHeader(
                 cover(
                     Modifier
                         .size(232.dp)
+                        .then(if (listState != null) Modifier.collapseOnScroll(listState) else Modifier)
+                        .then(if (flyTarget) Modifier.flyingCoverTarget(contextId, RoundedCornerShape(16.dp)) else Modifier)
                         .shadow(28.dp, RoundedCornerShape(16.dp)),
                 )
             }
@@ -286,4 +301,84 @@ fun ContextPlayControls(contextId: String?, onPlay: () -> Unit, onShuffle: () ->
         onClick = { if (current) player.togglePlay() else onPlay() },
         playing = current && state.isPlaying,
     )
+}
+
+/**
+ * Al bajar por la lista la portada se encoge, sube un poco más despacio que el resto y
+ * se desvanece (como en Spotify). Solo se recalcula el dibujo, no la pantalla.
+ */
+fun Modifier.collapseOnScroll(listState: LazyListState): Modifier = graphicsLayer {
+    val offset = if (listState.firstVisibleItemIndex == 0) listState.firstVisibleItemScrollOffset.toFloat() else size.height * 2f
+    val progress = (offset / (size.height * 1.1f)).coerceIn(0f, 1f)
+    val scale = 1f - 0.22f * progress
+    scaleX = scale
+    scaleY = scale
+    alpha = 1f - progress
+    translationY = offset * 0.35f
+}
+
+/**
+ * Barra que aparece arriba al bajar por una lista: atrás, el nombre y un play pequeño
+ * (pausa si esa lista ya suena). Sale cuando el título grande ya no se ve.
+ */
+@UnstableApi
+@Composable
+fun CollapsingTopBar(
+    listState: LazyListState,
+    title: String,
+    contextId: String?,
+    onPlay: () -> Unit,
+    showAfter: Dp = 330.dp,
+) {
+    val actions = LocalActions.current
+    val player = actions.container.player
+    val showAfterPx = with(LocalDensity.current) { showAfter.toPx() }
+    val visible by remember(listState, showAfterPx) {
+        derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > showAfterPx }
+    }
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(tween(180)) + slideInVertically(tween(240)) { -it / 3 },
+        exit = fadeOut(tween(140)) + slideOutVertically(tween(200)) { -it / 3 },
+    ) {
+        val state by player.state.collectAsState()
+        val current = contextId != null && state.song != null && state.contextId == contextId
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .background(LyraColors.Surface),
+        ) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .padding(start = 8.dp, end = 16.dp, top = 4.dp, bottom = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = { actions.nav.popBackStack() }) {
+                    Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Atrás", tint = LyraColors.TextPrimary)
+                }
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 12.dp),
+                )
+                PlayCircleButton(
+                    onClick = { if (current) player.togglePlay() else onPlay() },
+                    size = 40.dp,
+                    playing = current && state.isPlaying,
+                )
+            }
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(LyraColors.Border),
+            )
+        }
+    }
 }

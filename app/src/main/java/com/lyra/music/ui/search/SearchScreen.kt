@@ -98,6 +98,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
+import com.lyra.music.ui.components.RowsSkeleton
 
 @UnstableApi
 class SearchViewModel(private val container: AppContainer) : ViewModel() {
@@ -411,7 +412,7 @@ private fun Explore(vm: SearchViewModel, contentPadding: PaddingValues, onRecent
                 }
             }
             is Loadable.Error -> item { ErrorView(state.message, onRetry = vm::loadMoods) }
-            Loadable.Loading -> item { LoadingView(Modifier.height(200.dp)) }
+            Loadable.Loading -> item { RowsSkeleton(rows = 5) }
         }
     }
 }
@@ -429,7 +430,7 @@ private fun Results(vm: SearchViewModel, contentPadding: PaddingValues) {
     Column {
         ChipRow(tabs.map { it.label }, tabs.indexOf(vm.tab), { vm.selectTab(tabs[it]) }, Modifier.padding(bottom = 8.dp))
         when (val state = results) {
-            Loadable.Loading -> LoadingView()
+            Loadable.Loading -> RowsSkeleton()
             is Loadable.Error -> ErrorView(state.message, onRetry = vm::search)
             is Loadable.Ready -> {
                 val page = state.value

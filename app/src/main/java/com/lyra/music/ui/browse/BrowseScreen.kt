@@ -31,6 +31,7 @@ import com.lyra.music.ui.components.SectionView
 import com.lyra.music.ui.navigation.BrowseRoute
 import com.lyra.music.ui.navigation.PlaylistRoute
 import com.lyra.music.ui.playlist.RemotePlaylistScreen
+import com.lyra.music.ui.components.SectionsSkeleton
 
 @UnstableApi
 class BrowseViewModel(private val container: AppContainer, private val endpoint: BrowseEndpoint) : LoadViewModel<BrowsePage>() {
@@ -52,7 +53,7 @@ fun BrowseScreen(browseId: String, params: String?, title: String?, contentPaddi
 
     Column(Modifier.fillMaxSize()) {
         when (val s = state) {
-            Loadable.Loading -> { BackBar(title); LoadingView() }
+            Loadable.Loading -> { BackBar(title); SectionsSkeleton(sections = 3) }
             is Loadable.Error -> { BackBar(title); ErrorView(s.message, onRetry = vm::load) }
             is Loadable.Ready -> {
                 val page = s.value

@@ -24,6 +24,19 @@ class TitleCleanerTest {
     }
 
     @Test
+    fun `quita el ruido sin parentesis del final`() {
+        assertEquals(
+            "Marilyn Manson Tainted Love",
+            video("Marilyn Manson Tainted Love Official Music Video and Lyrics", "Music Club").cleaned().title,
+        )
+        assertEquals("Ojitos Lindos", video("Ojitos Lindos Video Oficial 2022", "Fan").cleaned().title)
+        // Una sola palabra o nombres de canción de verdad se quedan.
+        assertEquals("Video Games", song("Video Games", "Lana Del Rey").cleaned().title)
+        assertEquals("Music", song("Music", "Madonna").cleaned().title)
+        assertEquals("Love Song Lyrics", song("Love Song Lyrics", "Someone").cleaned().title)
+    }
+
+    @Test
     fun `deja lo que dice algo de la cancion`() {
         assertEquals("After (con Young Miko)", song("After (con Young Miko)", "Conep").cleaned().title)
         assertEquals("Song (Remix)", song("Song (Remix)", "Artist").cleaned().title)

@@ -31,6 +31,12 @@ import com.lyra.music.ui.components.LoadingView
 import com.lyra.music.ui.components.OutlineIconButton
 import com.lyra.music.ui.components.SectionView
 import com.lyra.music.ui.components.SongRow
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.lazy.rememberLazyListState
+import com.lyra.music.ui.components.CollapsingTopBar
+import com.lyra.music.ui.components.CollectionSkeleton
+import com.lyra.music.ui.components.LoadableCrossfade
+import androidx.compose.runtime.remember
 
 @UnstableApi
 class AlbumViewModel(private val container: AppContainer, private val id: String) : LoadViewModel<AlbumPage>() {
@@ -44,53 +50,64 @@ fun AlbumScreen(id: String, contentPadding: PaddingValues) {
     val actions = LocalActions.current
     val vm: AlbumViewModel = viewModel(key = id) { AlbumViewModel(actions.container, id) }
     val state by vm.state.collectAsState()
+    // Si abrió cargando, la portada voló a la pantalla de carga: la cabecera ya no la recibe.
+    val openedLoading = remember { state is Loadable.Loading }
+    val listState = rememberLazyListState()
 
-    when (val s = state) {
-        Loadable.Loading -> Column { BackBar(); LoadingView() }
-        is Loadable.Error -> Column { BackBar(); ErrorView(s.message, onRetry = vm::load) }
-        is Loadable.Ready -> {
-            val page = s.value
-            val album = page.album
-            val saved by actions.container.library.isAlbumSaved(album.id).collectAsState(initial = false)
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding() + 24.dp),
-            ) {
-                item {
-                    CollectionHeader(
-                        title = album.title,
-                        subtitle = album.artistsText,
-                        onSubtitleClick = { actions.openArtist(album.artists.firstOrNull()?.id) },
-                        eyebrow = listOfNotNull(album.kind ?: "Álbum", album.year).joinToString(" · "),
-                        meta = page.subtitle,
-                        backdrop = album.thumbnailUrl,
-                        cover = { Artwork(album.thumbnailUrl, it, RoundedCornerShape(16.dp)) },
-                        onPlay = { actions.play(page.songs, 0, from = album) },
-                        onShuffle = { actions.shuffle(page.songs, from = album) },
-                        contextId = album.id,
+    LoadableCrossfade(state) { loaded ->
+        when (val s = loaded) {
+            Loadable.Loading -> CollectionSkeleton(coverId = id)
+            is Loadable.Error -> Column { BackBar(); ErrorView(s.message, onRetry = vm::load) }
+            is Loadable.Ready -> {
+                val page = s.value
+                val album = page.album
+                val saved by actions.container.library.isAlbumSaved(album.id).collectAsState(initial = false)
+                Box(Modifier.fillMaxSize()) {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding() + 24.dp),
                     ) {
-                        OutlineIconButton(
-                            if (saved) Icons.Rounded.Check else Icons.Rounded.Add,
-                            if (saved) "Quitar de la biblioteca" else "Guardar en la biblioteca",
-                            onClick = {
-                                actions.launch { actions.container.library.setAlbumSaved(album, !saved, page.songs) }
-                                actions.message(if (saved) "Quitado de tu biblioteca" else "Guardado en tu biblioteca")
-                            },
-                        )
-                        DownloadAllButton(page.songs, album.title)
-                        OutlineIconButton(Icons.AutoMirrored.Rounded.PlaylistAdd, "Añadir a playlist", onClick = { actions.addToPlaylist = page.songs })
+                        item {
+                            CollectionHeader(
+                                title = album.title,
+                                subtitle = album.artistsText,
+                                onSubtitleClick = { actions.openArtist(album.artists.firstOrNull()?.id) },
+                                eyebrow = listOfNotNull(album.kind ?: "Álbum", album.year).joinToString(" · "),
+                                meta = page.subtitle,
+                                backdrop = album.thumbnailUrl,
+                                cover = { Artwork(album.thumbnailUrl, it, RoundedCornerShape(16.dp)) },
+                                onPlay = { actions.play(page.songs, 0, from = album) },
+                                onShuffle = { actions.shuffle(page.songs, from = album) },
+                                contextId = album.id,
+                                listState = listState,
+                                flyTarget = !openedLoading,
+                            ) {
+                                OutlineIconButton(
+                                    if (saved) Icons.Rounded.Check else Icons.Rounded.Add,
+                                    if (saved) "Quitar de la biblioteca" else "Guardar en la biblioteca",
+                                    onClick = {
+                                        actions.launch { actions.container.library.setAlbumSaved(album, !saved, page.songs) }
+                                        actions.message(if (saved) "Quitado de tu biblioteca" else "Guardado en tu biblioteca")
+                                    },
+                                )
+                                DownloadAllButton(page.songs, album.title)
+                                OutlineIconButton(Icons.AutoMirrored.Rounded.PlaylistAdd, "Añadir a playlist", onClick = { actions.addToPlaylist = page.songs })
+                            }
+                        }
+                        itemsIndexed(page.songs, key = { _, song -> song.id }) { index, song ->
+                            SongRow(
+                                song,
+                                onClick = { actions.play(page.songs, index, from = album) },
+                                index = index + 1,
+                                showArtwork = false,
+                            )
+                        }
+                        page.sections.forEach { section ->
+                            item(key = "s-${section.title}") { SectionView(section) }
+                        }
                     }
-                }
-                itemsIndexed(page.songs, key = { _, song -> song.id }) { index, song ->
-                    SongRow(
-                        song,
-                        onClick = { actions.play(page.songs, index, from = album) },
-                        index = index + 1,
-                        showArtwork = false,
-                    )
-                }
-                page.sections.forEach { section ->
-                    item(key = "s-${section.title}") { SectionView(section) }
+                    CollapsingTopBar(listState, album.title, album.id, onPlay = { actions.play(page.songs, 0, from = album) })
                 }
             }
         }

@@ -461,14 +461,18 @@ fun ItemRow(item: MusicItem, modifier: Modifier = Modifier, subtitle: String = s
         SongRow(item, onClick = { onClick?.invoke() ?: actions.open(item) }, modifier = modifier)
         return
     }
+    val tag = rememberCoverTag(item.coverId())
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .pressable(pressedScale = 0.985f) { onClick?.invoke() ?: actions.open(item) }
+            .pressable(pressedScale = 0.985f) {
+                CoverFlight.take(tag, item.thumbnailUrl)
+                onClick?.invoke() ?: actions.open(item)
+            }
             .padding(horizontal = 20.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ItemArtwork(item, Modifier.size(56.dp), RoundedCornerShape(10.dp))
+        ItemArtwork(item, Modifier.size(56.dp).flyingCover(tag, RoundedCornerShape(10.dp)), RoundedCornerShape(10.dp))
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text(item.title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -479,6 +483,9 @@ fun ItemRow(item: MusicItem, modifier: Modifier = Modifier, subtitle: String = s
 
 // ------------------------------------------------------------------ tarjetas
 
+/** Solo las portadas de álbumes y playlists vuelan a su cabecera (los artistas tienen foto a todo lo ancho). */
+private fun MusicItem.coverId(): String? = id.takeIf { this is AlbumItem || this is PlaylistItem }
+
 private fun MusicItem.isPlayable() = this is RadioItem || this is AlbumItem || this is PlaylistItem || this is Song
 
 /** Tarjeta de carrusel: portada grande de 16 px con botón de play hueso encima. */
@@ -486,10 +493,14 @@ private fun MusicItem.isPlayable() = this is RadioItem || this is AlbumItem || t
 @Composable
 fun ItemCard(item: MusicItem, modifier: Modifier = Modifier, width: Dp = 156.dp) {
     val actions = LocalActions.current
+    val tag = rememberCoverTag(item.coverId())
     Column(
         modifier = modifier
             .width(width)
-            .pressable { actions.open(item) },
+            .pressable {
+                CoverFlight.take(tag, item.thumbnailUrl)
+                actions.open(item)
+            },
     ) {
         val isVideo = item is Song && item.isVideo && item.album == null
         Box(
@@ -498,7 +509,7 @@ fun ItemCard(item: MusicItem, modifier: Modifier = Modifier, width: Dp = 156.dp)
                 .aspectRatio(if (isVideo) 16f / 10f else 1f),
         ) {
             if (item is Song) Artwork(artworkFor(item), Modifier.fillMaxSize(), RoundedCornerShape(16.dp))
-            else ItemArtwork(item, Modifier.fillMaxSize(), RoundedCornerShape(16.dp))
+            else ItemArtwork(item, Modifier.fillMaxSize().flyingCover(tag, RoundedCornerShape(16.dp)), RoundedCornerShape(16.dp))
             if (item.isPlayable()) {
                 PlayCircleButton(
                     onClick = { actions.playItem(item) },
@@ -535,16 +546,20 @@ fun ItemCard(item: MusicItem, modifier: Modifier = Modifier, width: Dp = 156.dp)
 @Composable
 fun QuickTile(item: MusicItem, modifier: Modifier = Modifier) {
     val actions = LocalActions.current
+    val tag = rememberCoverTag(item.coverId())
     Row(
         modifier = modifier
             .height(56.dp)
             .clip(RoundedCornerShape(12.dp))
             .background(LyraColors.SurfaceHigh)
-            .pressable { actions.open(item) },
+            .pressable {
+                CoverFlight.take(tag, item.thumbnailUrl)
+                actions.open(item)
+            },
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (item is Song) Artwork(artworkFor(item), Modifier.size(56.dp), RoundedCornerShape(12.dp))
-        else ItemArtwork(item, Modifier.size(56.dp), RoundedCornerShape(12.dp))
+        else ItemArtwork(item, Modifier.size(56.dp).flyingCover(tag, RoundedCornerShape(12.dp)), RoundedCornerShape(12.dp))
         Text(
             if (item is RadioItem) item.subtitle.substringBefore(",") else item.title,
             modifier = Modifier

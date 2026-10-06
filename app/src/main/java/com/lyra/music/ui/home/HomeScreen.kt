@@ -64,6 +64,7 @@ import com.lyra.music.ui.navigation.SettingsRoute
 import com.lyra.music.ui.theme.LyraColors
 import kotlinx.coroutines.launch
 import java.util.Calendar
+import com.lyra.music.ui.components.SectionsSkeleton
 
 @OptIn(ExperimentalMaterial3Api::class)
 @UnstableApi
@@ -203,7 +204,7 @@ fun HomeScreen(contentPadding: PaddingValues) {
                     item {
                         when {
                             feed.error != null -> ErrorView(feed.error!!, onRetry = { scope.launch { container.home.refresh(force = true) } })
-                            else -> LoadingView(Modifier.height(280.dp))
+                            else -> SectionsSkeleton()
                         }
                     }
                 }
@@ -211,7 +212,7 @@ fun HomeScreen(contentPadding: PaddingValues) {
                 val sections = chipSections
                 when {
                     chipError != null -> item { ErrorView(chipError!!, onRetry = { selectChip(selectedChip, feed.chips.getOrNull(selectedChip - 1)) }) }
-                    sections == null -> item { LoadingView(Modifier.height(280.dp)) }
+                    sections == null -> item { SectionsSkeleton() }
                     else -> itemsIndexed(sections, key = { index, s -> "chip$index-${s.title}" }) { _, section ->
                         SectionView(section, onMore = section.more?.let { { openMore(section) } })
                     }

@@ -66,6 +66,8 @@ import com.lyra.music.ui.components.TextInputDialog
 import com.lyra.music.ui.components.pressable
 import com.lyra.music.ui.navigation.FolderRoute
 import com.lyra.music.ui.theme.LyraColors
+import androidx.compose.foundation.lazy.rememberLazyListState
+import com.lyra.music.ui.components.CollapsingTopBar
 
 /** Portada de una playlist: la elegida por ti o, si no, el mosaico de sus canciones. */
 @UnstableApi
@@ -155,41 +157,46 @@ fun FolderScreen(id: Long, contentPadding: PaddingValues) {
         }
     }
 
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding() + 16.dp)) {
-        item {
-            CollectionHeader(
-                title = name,
-                subtitle = null,
-                eyebrow = "Carpeta",
-                meta = if (inside.size == 1) "1 playlist" else "${inside.size} playlists",
-                backdrop = covers.firstOrNull(),
-                cover = { FolderCover(covers, it, RoundedCornerShape(16.dp)) },
-                onPlay = { playAll(shuffle = false) },
-                onShuffle = { playAll(shuffle = true) },
-                contextId = "folder:$id",
-            ) {
-                OutlineIconButton(Icons.Rounded.LibraryAdd, "Añadir playlists", onClick = { choosing = true })
-                Row {
-                    OutlineIconButton(Icons.Rounded.Edit, "Editar", onClick = { menuOpen = true })
-                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }, containerColor = LyraColors.SurfaceHigh) {
-                        DropdownMenuItem(text = { Text("Cambiar nombre") }, onClick = { menuOpen = false; renaming = true })
-                        DropdownMenuItem(text = { Text("Eliminar carpeta") }, onClick = { menuOpen = false; deleting = true })
+    val listState = rememberLazyListState()
+    Box(Modifier.fillMaxSize()) {
+        LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding() + 16.dp)) {
+            item {
+                CollectionHeader(
+                    title = name,
+                    subtitle = null,
+                    eyebrow = "Carpeta",
+                    meta = if (inside.size == 1) "1 playlist" else "${inside.size} playlists",
+                    backdrop = covers.firstOrNull(),
+                    cover = { FolderCover(covers, it, RoundedCornerShape(16.dp)) },
+                    onPlay = { playAll(shuffle = false) },
+                    onShuffle = { playAll(shuffle = true) },
+                    contextId = "folder:$id",
+                    listState = listState,
+                ) {
+                    OutlineIconButton(Icons.Rounded.LibraryAdd, "Añadir playlists", onClick = { choosing = true })
+                    Row {
+                        OutlineIconButton(Icons.Rounded.Edit, "Editar", onClick = { menuOpen = true })
+                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }, containerColor = LyraColors.SurfaceHigh) {
+                            DropdownMenuItem(text = { Text("Cambiar nombre") }, onClick = { menuOpen = false; renaming = true })
+                            DropdownMenuItem(text = { Text("Eliminar carpeta") }, onClick = { menuOpen = false; deleting = true })
+                        }
                     }
                 }
             }
-        }
-        if (folder != null && inside.isEmpty()) {
-            item {
-                EmptyView(
-                    Icons.Rounded.Folder,
-                    "Carpeta vacía",
-                    "Mete playlists aquí o desde el menú de cada playlist (lápiz → Mover a carpeta).",
-                    action = "Añadir playlists",
-                    onAction = { choosing = true },
-                )
+            if (folder != null && inside.isEmpty()) {
+                item {
+                    EmptyView(
+                        Icons.Rounded.Folder,
+                        "Carpeta vacía",
+                        "Mete playlists aquí o desde el menú de cada playlist (lápiz → Mover a carpeta).",
+                        action = "Añadir playlists",
+                        onAction = { choosing = true },
+                    )
+                }
             }
+            items(inside, key = { it.id }) { PlaylistRow(it, Modifier.animateItem()) }
         }
-        items(inside, key = { it.id }) { PlaylistRow(it, Modifier.animateItem()) }
+        CollapsingTopBar(listState, name, "folder:$id", onPlay = { playAll(shuffle = false) })
     }
 
     if (renaming) {

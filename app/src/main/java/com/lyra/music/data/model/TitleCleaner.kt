@@ -17,6 +17,8 @@ object TitleCleaner {
         "hd", "hq", "4k", "8k", "uhd", "1080p", "720p", "fixed", "english", "cc", "subtitulado",
         "subtitulos", "sub", "subs", "espanol", "explicit", "mv", "m/v", "full",
     )
+    /** Palabras que unen ruido ("Official Video and Lyrics"). */
+    private val GLUE = setOf("and", "y", "e", "with", "w/", "&", "+")
     private val YEAR = Regex("(19|20)\\d\\d")
     private val BRACKET = Regex("[(\\[【]([^()\\[\\]【】]*)[)\\]】]")
     private val SEPARATOR = Regex("(?:^|\\s)[-–—|]+(?:\\s|$)|\\s//\\s")
@@ -62,8 +64,31 @@ object TitleCleaner {
     fun segments(title: String): List<String> {
         val withoutNoise = BRACKET.replace(title) { match -> if (isNoise(match.groupValues[1])) " " else match.value }
         return withoutNoise.split(SEPARATOR)
-            .map { unquote(it.replace(SPACES, " ").trim()) }
+            .map { unquote(stripTrailingNoise(it.replace(SPACES, " ").trim())) }
             .filterIndexed { index, part -> part.isNotBlank() && (index == 0 || !isNoise(part)) }
+    }
+
+    /**
+     * Ruido sin paréntesis al final: "Tainted Love Official Music Video and Lyrics" →
+     * "Tainted Love". Solo con dos o más palabras de ruido, para no tocar "Video Games".
+     */
+    private fun stripTrailingNoise(text: String): String {
+        val words = text.split(' ')
+        var cut = words.size
+        var noise = 0
+        while (cut > 0) {
+            val word = key(words[cut - 1], keepSpaces = true)
+            when {
+                word in NOISE || YEAR.matches(word) -> noise++
+                word in GLUE || word.isEmpty() -> Unit
+                else -> break
+            }
+            cut--
+        }
+        // No se deja colgando un "and" del principio del ruido.
+        while (cut < words.size && key(words[cut], keepSpaces = true) in GLUE) cut++
+        if (noise < 2 || cut == 0) return text
+        return words.take(cut).joinToString(" ").trim()
     }
 
     private fun isNoise(text: String): Boolean {
