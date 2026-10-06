@@ -82,6 +82,13 @@ if ($NotesFile) {
 } else {
     [IO.File]::WriteAllText($notesPath, "Mejoras y correcciones.", (New-Object System.Text.UTF8Encoding $false))
 }
+# Guía para quien la instala por primera vez (Play Protect avisa al no venir de Google Play).
+# La app no la enseña en «Novedades»: corta las notas en la marca <!-- instalar -->.
+if (Test-Path "$root\INSTALAR.md") {
+    $guide = [IO.File]::ReadAllText("$root\INSTALAR.md", [Text.Encoding]::UTF8).Trim()
+    $notes = [IO.File]::ReadAllText($notesPath, [Text.Encoding]::UTF8).TrimEnd()
+    [IO.File]::WriteAllText($notesPath, "$notes`n`n<!-- instalar -->`n`n$guide`n", (New-Object System.Text.UTF8Encoding $false))
+}
 
 # --- 4. Git y GitHub -----------------------------------------------------------
 Invoke-Tool "git" @("add", "-A")
