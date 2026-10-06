@@ -32,6 +32,8 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.LocalRippleConfiguration
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
@@ -50,7 +52,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import com.lyra.music.ui.components.bounceOnChange
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.ui.Alignment
@@ -130,13 +131,25 @@ import com.lyra.music.ui.components.popEnterFor
 import com.lyra.music.ui.components.popExitFor
 import androidx.compose.runtime.withFrameNanos
 import com.lyra.music.core.plural
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.graphics.graphicsLayer
 
-private data class Tab(val route: Any, val label: String, val icon: ImageVector, val selectedIcon: ImageVector)
+/** El gesto de cada icono de la barra de abajo al elegirlo. */
+private enum class TabMotion { HOP, LOOK, LEAN }
+
+private data class Tab(val route: Any, val label: String, val icon: ImageVector, val selectedIcon: ImageVector, val motion: TabMotion)
 
 private val tabs = listOf(
-    Tab(HomeRoute, "Inicio", Icons.Outlined.Home, Icons.Rounded.Home),
-    Tab(SearchRoute, "Buscar", Icons.Outlined.Search, Icons.Rounded.Search),
-    Tab(LibraryRoute, "Biblioteca", Icons.AutoMirrored.Outlined.LibraryBooks, Icons.AutoMirrored.Rounded.LibraryBooks),
+    Tab(HomeRoute, "Inicio", Icons.Outlined.Home, Icons.Rounded.Home, TabMotion.HOP),
+    Tab(SearchRoute, "Buscar", Icons.Outlined.Search, Icons.Rounded.Search, TabMotion.LOOK),
+    Tab(LibraryRoute, "Biblioteca", Icons.AutoMirrored.Outlined.LibraryBooks, Icons.AutoMirrored.Rounded.LibraryBooks, TabMotion.LEAN),
 )
 
 /** Curva suave de salida, parecida a la de iOS. */
@@ -374,7 +387,7 @@ fun LyraRoot(container: AppContainer) {
     }
 }
 
-@OptIn(ExperimentalSharedTransitionApi::class)
+@OptIn(ExperimentalSharedTransitionApi::class, ExperimentalMaterial3Api::class)
 @UnstableApi
 @Composable
 private fun BottomBar(actions: LyraActions, shared: SharedTransitionScope) {
@@ -423,36 +436,98 @@ private fun BottomBar(actions: LyraActions, shared: SharedTransitionScope) {
                 .height(1.dp)
                 .background(LyraColors.Border),
         )
-        NavigationBar(containerColor = LyraColors.Background, tonalElevation = 0.dp) {
-            tabs.forEach { tab ->
-                val selected = destination?.hierarchy?.any { it.hasRoute(tab.route::class) } == true
-                NavigationBarItem(
-                    selected = selected,
-                    onClick = {
-                        actions.nav.navigate(tab.route) {
-                            popUpTo(actions.nav.graph.findStartDestination().id) { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    },
-                    icon = {
-                        Icon(
-                            if (selected) tab.selectedIcon else tab.icon,
-                            tab.label,
-                            modifier = Modifier.bounceOnChange(selected, onlyWhen = selected),
-                        )
-                    },
-                    label = { Text(tab.label, style = MaterialTheme.typography.labelMedium) },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = LyraColors.TextPrimary,
-                        selectedTextColor = LyraColors.TextPrimary,
-                        unselectedIconColor = LyraColors.TextTertiary,
-                        unselectedTextColor = LyraColors.TextTertiary,
-                        indicatorColor = Color.Transparent,
-                    ),
-                )
+        // Sin la mancha gris al pulsar: el icono ya se hunde y salta (como en Spotify).
+        CompositionLocalProvider(LocalRippleConfiguration provides null) {
+            NavigationBar(containerColor = LyraColors.Background, tonalElevation = 0.dp) {
+                tabs.forEach { tab ->
+                    val selected = destination?.hierarchy?.any { it.hasRoute(tab.route::class) } == true
+                    val interaction = remember { MutableInteractionSource() }
+                    var taps by remember { mutableIntStateOf(0) }
+                    NavigationBarItem(
+                        selected = selected,
+                        interactionSource = interaction,
+                        onClick = {
+                            if (selected) taps++
+                            actions.nav.navigate(tab.route) {
+                                popUpTo(actions.nav.graph.findStartDestination().id) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        },
+                        icon = { TabIcon(tab, selected, taps, interaction) },
+                        label = { Text(tab.label, style = MaterialTheme.typography.labelMedium) },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = LyraColors.TextPrimary,
+                            selectedTextColor = LyraColors.TextPrimary,
+                            unselectedIconColor = LyraColors.TextTertiary,
+                            unselectedTextColor = LyraColors.TextTertiary,
+                            indicatorColor = Color.Transparent,
+                        ),
+                    )
+                }
             }
         }
+    }
+}
+
+/**
+ * Icono de la barra de abajo, como en Spotify: se hunde mientras lo pulsas y, al elegirlo, pasa
+ * de contorno a relleno de un salto y hace su gesto (la casa salta, la lupa mira, los libros se
+ * inclinan). Si vuelves a tocar la pestaña en la que estás, repite el gesto.
+ */
+@Composable
+private fun TabIcon(tab: Tab, selected: Boolean, taps: Int, interaction: MutableInteractionSource) {
+    val pressed by interaction.collectIsPressedAsState()
+    val press by animateFloatAsState(
+        if (pressed) 0.8f else 1f,
+        if (pressed) tween(90) else spring(dampingRatio = 0.4f, stiffness = Spring.StiffnessMedium),
+        label = "pulsar",
+    )
+    val fill by animateFloatAsState(
+        if (selected) 1f else 0f,
+        if (selected) spring(dampingRatio = 0.45f, stiffness = Spring.StiffnessMediumLow) else tween(160),
+        label = "relleno",
+    )
+    // Sube a 1 y vuelve con un muelle que se pasa un poco: eso hace el meneo.
+    val gesture = remember { Animatable(0f) }
+    val first = remember { booleanArrayOf(true) }
+    LaunchedEffect(selected, taps) {
+        if (first[0]) {
+            first[0] = false
+            return@LaunchedEffect
+        }
+        if (!selected) return@LaunchedEffect
+        gesture.animateTo(1f, tween(130, easing = FastOutSlowInEasing))
+        gesture.animateTo(0f, spring(dampingRatio = 0.3f, stiffness = Spring.StiffnessLow))
+    }
+    Box(
+        Modifier.graphicsLayer {
+            val g = gesture.value
+            val scale = press * (1f + 0.14f * g)
+            scaleX = scale
+            scaleY = scale
+            when (tab.motion) {
+                TabMotion.HOP -> translationY = -6.dp.toPx() * g
+                TabMotion.LOOK -> rotationZ = -22f * g
+                TabMotion.LEAN -> {
+                    rotationZ = 14f * g
+                    translationY = -2.dp.toPx() * g
+                }
+            }
+        },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(tab.icon, null, Modifier.graphicsLayer { alpha = (1f - fill).coerceIn(0f, 1f) })
+        Icon(
+            tab.selectedIcon,
+            null,
+            Modifier.graphicsLayer {
+                alpha = fill.coerceIn(0f, 1f)
+                val scale = 0.55f + 0.45f * fill
+                scaleX = scale
+                scaleY = scale
+            },
+        )
     }
 }
 
