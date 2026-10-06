@@ -2,6 +2,8 @@
 
 App de música personal para Android, estilo Spotify en negro, gris y blanco. Busca, reproduce y descarga música de **YouTube Music** y **SoundCloud**, y se actualiza sola desde las releases de este repositorio.
 
+**Web:** https://lyra.shopxcenter.duckdns.org (descarga con el aviso de cómo instalarla)
+
 > Proyecto personal y sin ánimo de lucro. Usar YouTube de esta forma va contra sus condiciones de uso: es para uso propio.
 
 ## ⚠️ Antes de instalar Lyra (léelo si es la primera vez)
