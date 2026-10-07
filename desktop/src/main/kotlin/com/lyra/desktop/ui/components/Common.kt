@@ -182,9 +182,10 @@ fun IconBtn(
         hovered -> hoverTint
         else -> tint
     }
-    Tooltip(description) {
+    // El modifier de fuera (alinear, márgenes…) va en la capa de fuera, la del aviso.
+    Tooltip(description, modifier) {
         Box(
-            modifier
+            Modifier
                 .size(size)
                 .scale(scale)
                 .clip(CircleShape)
@@ -546,8 +547,9 @@ fun Gap(width: Dp = 0.dp, height: Dp = 0.dp) = Spacer(Modifier.width(width).heig
 
 /** Texto de ayuda al dejar el ratón encima. */
 @Composable
-fun Tooltip(text: String, content: @Composable () -> Unit) {
+fun Tooltip(text: String, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     androidx.compose.foundation.TooltipArea(
+        modifier = modifier,
         tooltip = {
             Box(
                 Modifier

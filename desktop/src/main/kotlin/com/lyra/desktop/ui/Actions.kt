@@ -61,6 +61,9 @@ class LyraActions(val app: AppContainer, val nav: Navigator) {
     /** Pide que el buscador de arriba coja el foco (Ctrl+F). */
     var focusSearch by mutableStateOf(0)
 
+    /** Pantalla completa (F11 o el botón de abajo a la derecha; Esc para salir). */
+    var fullScreen by mutableStateOf(false)
+
     fun message(text: String, action: String? = null, onAction: (() -> Unit)? = null) {
         _messages.tryEmit(UiMessage(text, action, onAction))
     }

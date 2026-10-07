@@ -65,6 +65,12 @@ import com.lyra.desktop.ui.components.SongMenuEntries
 import com.lyra.desktop.ui.components.contextMenu
 import com.lyra.desktop.ui.components.MenuEntry
 import com.lyra.music.data.source.lyrics.Lyrics
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 
 @Composable
 fun RightPanelView(panel: RightPanel, modifier: Modifier = Modifier) {
@@ -181,8 +187,20 @@ private fun QueueRow(item: QueueItem, isCurrent: Boolean = false) {
 
 // ---------------------------------------------------------------------- letra
 
+/** Los bordes de arriba y abajo se desvanecen (la letra en grande no se corta en seco). */
+private val FadedEdges = Modifier
+    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+    .drawWithContent {
+        drawContent()
+        drawRect(
+            Brush.verticalGradient(0f to Color.Transparent, 0.1f to Color.Black, 0.8f to Color.Black, 1f to Color.Transparent),
+            blendMode = BlendMode.DstIn,
+        )
+    }
+
+/** La letra de lo que suena. [big]: en grande, para la pantalla completa. */
 @Composable
-private fun LyricsPanel() {
+fun LyricsPanel(big: Boolean = false) {
     val app = LocalActions.current.app
     val state by app.player.state.collectAsState()
     val song = state.current?.song
@@ -200,13 +218,13 @@ private fun LyricsPanel() {
     when {
         loading -> LoadingView()
         lyrics == null -> MessageView(Icons.Rounded.Lyrics, "No hay letra", "No he encontrado la letra de esta canción.")
-        lyrics!!.isSynced -> SyncedLyrics(lyrics!!)
-        else -> PlainLyrics(lyrics!!)
+        lyrics!!.isSynced -> SyncedLyrics(lyrics!!, big)
+        else -> PlainLyrics(lyrics!!, big)
     }
 }
 
 @Composable
-private fun SyncedLyrics(lyrics: Lyrics) {
+private fun SyncedLyrics(lyrics: Lyrics, big: Boolean) {
     val app = LocalActions.current.app
     val lines = lyrics.synced.orEmpty()
     val (position, _) = rememberProgress()
@@ -225,13 +243,14 @@ private fun SyncedLyrics(lyrics: Lyrics) {
         if (active < 0 || System.currentTimeMillis() - userScrolledAt < 4_000) return@LaunchedEffect
         autoScrolling = true
         try {
-            list.animateScrollToItem((active - 3).coerceAtLeast(0))
+            list.animateScrollToItem((active - if (big) 2 else 3).coerceAtLeast(0))
         } finally {
             autoScrolling = false
         }
     }
-    Box(Modifier.fillMaxSize()) {
-        LazyColumn(state = list, contentPadding = PaddingValues(start = 22.dp, end = 22.dp, top = 12.dp, bottom = 220.dp)) {
+    Box(Modifier.fillMaxSize().then(if (big) FadedEdges else Modifier)) {
+        val padding = if (big) PaddingValues(end = 12.dp, top = 48.dp, bottom = 320.dp) else PaddingValues(start = 22.dp, end = 22.dp, top = 12.dp, bottom = 220.dp)
+        LazyColumn(state = list, contentPadding = padding) {
             itemsIndexed(lines) { index, line ->
                 val color by animateColorAsState(
                     when {
@@ -244,9 +263,13 @@ private fun SyncedLyrics(lyrics: Lyrics) {
                 HoverBox(onClick = { app.player.seek(line.timeMs) }, modifier = Modifier.fillMaxWidth()) {
                     Text(
                         line.text.ifBlank { "♪" },
-                        style = MaterialTheme.typography.titleLarge.copy(fontSize = 22.sp, lineHeight = 30.sp, fontWeight = FontWeight.Bold),
+                        style = MaterialTheme.typography.titleLarge.copy(
+                            fontSize = if (big) 34.sp else 22.sp,
+                            lineHeight = if (big) 44.sp else 30.sp,
+                            fontWeight = FontWeight.Bold,
+                        ),
                         color = color,
-                        modifier = Modifier.padding(vertical = 6.dp, horizontal = 4.dp),
+                        modifier = Modifier.padding(vertical = if (big) 10.dp else 6.dp, horizontal = if (big) 8.dp else 4.dp),
                     )
                 }
             }
@@ -258,11 +281,15 @@ private fun SyncedLyrics(lyrics: Lyrics) {
 }
 
 @Composable
-private fun PlainLyrics(lyrics: Lyrics) {
+private fun PlainLyrics(lyrics: Lyrics, big: Boolean) {
     val scroll = rememberScrollState()
     Box(Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize().verticalScroll(scroll).padding(horizontal = 22.dp, vertical = 12.dp)) {
-            Text(lyrics.plain.orEmpty(), style = MaterialTheme.typography.titleMedium.copy(lineHeight = 26.sp), color = LyraColors.TextPrimary)
+        Column(Modifier.fillMaxSize().verticalScroll(scroll).padding(horizontal = if (big) 8.dp else 22.dp, vertical = 12.dp)) {
+            Text(
+                lyrics.plain.orEmpty(),
+                style = if (big) MaterialTheme.typography.headlineSmall.copy(fontSize = 26.sp, lineHeight = 38.sp) else MaterialTheme.typography.titleMedium.copy(lineHeight = 26.sp),
+                color = LyraColors.TextPrimary,
+            )
             Spacer(Modifier.height(20.dp))
             Text("Letra: ${lyrics.source}", style = MaterialTheme.typography.bodySmall, color = LyraColors.TextTertiary)
             Spacer(Modifier.height(40.dp))

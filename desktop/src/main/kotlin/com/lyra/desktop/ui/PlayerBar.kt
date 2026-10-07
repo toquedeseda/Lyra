@@ -24,6 +24,7 @@ import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.Lyrics
+import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.PictureInPictureAlt
 import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material.icons.rounded.RepeatOne
@@ -172,6 +173,7 @@ fun PlayerBar(onToggleMini: () -> Unit, modifier: Modifier = Modifier) {
                 app.settings.update { it.copy(rightPanel = if (it.rightPanel == RightPanel.QUEUE) RightPanel.NONE else RightPanel.QUEUE) }
             }, active = settings.rightPanel == RightPanel.QUEUE)
             IconBtn(Icons.Rounded.PictureInPictureAlt, "Mini reproductor", onClick = onToggleMini)
+            IconBtn(Icons.Rounded.Fullscreen, "Pantalla completa (F11)", onClick = { actions.fullScreen = true }, enabled = current != null)
             Spacer(Modifier.width(4.dp))
             VolumeControl()
         }

@@ -62,6 +62,11 @@ class Updater(private val http: OkHttpClient, private val scope: CoroutineScope,
         }
     }
 
+    /** Solo para las capturas de prueba: enseña un estado sin buscar nada. */
+    internal fun showForTest(state: UpdateState) {
+        _state.value = state
+    }
+
     /** Las notas de una versión ya publicada (para «Novedades» después de actualizar). */
     suspend fun notesFor(version: String): String? = withContext(Dispatchers.IO) {
         runCatching {

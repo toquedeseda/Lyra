@@ -82,6 +82,8 @@ data class DesktopSettings(
     val librarySort: LibrarySort = LibrarySort.RECENT,
     val libraryFilter: Int = 0,
     val rightPanel: RightPanel = RightPanel.QUEUE,
+    /** En pantalla completa, la letra a la derecha (se recuerda). */
+    val fullScreenLyrics: Boolean = true,
     val window: WindowBounds? = null,
     val closeToTray: Boolean = false,
     /** Ya se avisó (una vez) de que, al cerrar, Lyra sigue en la bandeja. */

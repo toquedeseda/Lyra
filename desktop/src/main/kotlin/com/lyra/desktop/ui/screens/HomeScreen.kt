@@ -26,6 +26,7 @@ import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -128,28 +129,42 @@ private fun SyncHint() {
     val status by app.sync.status.collectAsState()
     val empty = data.liked.isEmpty() && data.playlists.isEmpty() && data.albums.isEmpty()
     if (!empty || settings.syncHintDismissed || status !is com.lyra.desktop.sync.SyncStatus.Off) return
-    Row(
+    val open = { actions.nav.navigate(com.lyra.desktop.ui.Screen.Settings) }
+    val dismiss = { app.settings.update { it.copy(syncHintDismissed = true) } }
+    BoxWithConstraints(
         Modifier
             .padding(start = PagePadding, end = PagePadding, top = 8.dp, bottom = 12.dp)
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .background(LyraColors.SurfaceHigh)
-            .padding(start = 20.dp, end = 10.dp, top = 16.dp, bottom = 16.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .background(LyraColors.SurfaceHigh),
     ) {
-        Icon(Icons.Rounded.Sync, null, tint = LyraColors.Accent, modifier = Modifier.size(28.dp))
-        Spacer(Modifier.width(16.dp))
-        Column(Modifier.weight(1f)) {
-            Text("¿Usas Lyra en el móvil?", style = MaterialTheme.typography.titleMedium, color = LyraColors.TextPrimary)
-            Text(
-                "Trae aquí tus Me gusta, playlists y carpetas. En el móvil: Ajustes → Biblioteca sincronizada → Activar; luego escribe el código en Ajustes de aquí.",
-                style = MaterialTheme.typography.bodySmall,
-                color = LyraColors.TextSecondary,
-            )
+        // Estrecho (ventana pequeña con la cola abierta): los botones van debajo del texto.
+        val narrow = maxWidth < 560.dp
+        Row(Modifier.padding(start = 20.dp, end = 10.dp, top = 16.dp, bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Rounded.Sync, null, tint = LyraColors.Accent, modifier = Modifier.size(28.dp))
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f)) {
+                Text("¿Usas Lyra en el móvil?", style = MaterialTheme.typography.titleMedium, color = LyraColors.TextPrimary)
+                Text(
+                    "Trae aquí tus Me gusta, playlists y carpetas. En el móvil: Ajustes → Biblioteca sincronizada → Activar; luego escribe el código en Ajustes de aquí.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = LyraColors.TextSecondary,
+                )
+                if (narrow) {
+                    Spacer(Modifier.height(10.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        FilledPill("Sincronizar", onClick = open)
+                        Spacer(Modifier.width(4.dp))
+                        TextButton(onClick = dismiss) { Text("No, gracias", color = LyraColors.TextSecondary, style = MaterialTheme.typography.labelLarge) }
+                    }
+                }
+            }
+            if (!narrow) {
+                Spacer(Modifier.width(12.dp))
+                FilledPill("Sincronizar", onClick = open)
+                IconBtn(Icons.Rounded.Close, "No, gracias", onClick = dismiss)
+            }
         }
-        Spacer(Modifier.width(12.dp))
-        FilledPill("Sincronizar", onClick = { actions.nav.navigate(com.lyra.desktop.ui.Screen.Settings) })
-        IconBtn(Icons.Rounded.Close, "No, gracias", onClick = { app.settings.update { it.copy(syncHintDismissed = true) } })
     }
 }
 

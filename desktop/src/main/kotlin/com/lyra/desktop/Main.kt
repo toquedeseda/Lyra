@@ -36,7 +36,9 @@ import com.lyra.desktop.audio.Natives
 import com.lyra.desktop.data.WindowBounds
 import com.lyra.desktop.system.Integrations
 import com.lyra.desktop.system.MediaControls
+import com.lyra.desktop.system.TaskbarButtons
 import com.lyra.desktop.system.WindowsSystem
+import com.lyra.desktop.ui.FullScreenPlayer
 import com.lyra.desktop.ui.LyraActions
 import com.lyra.desktop.ui.MainContent
 import com.lyra.desktop.ui.MiniPlayerContent
@@ -105,6 +107,7 @@ fun main(args: Array<String>) {
         val settings by app.settings.flow.collectAsState()
         var visible by remember { mutableStateOf(!startHidden) }
         var mini by remember { mutableStateOf(false) }
+        var mainWindow by remember { mutableStateOf<java.awt.Window?>(null) }
         val saved = remember { app.settings.current.window }
         val windowState = rememberWindowState(
             placement = if (saved?.maximized == true) WindowPlacement.Maximized else WindowPlacement.Floating,
@@ -160,6 +163,7 @@ fun main(args: Array<String>) {
             onKeyEvent = { event -> shortcuts(event, actions) },
         ) {
             LaunchedEffect(Unit) {
+                mainWindow = window
                 window.minimumSize = Dimension(940, 620)
                 WindowsSystem.styleTitleBar(window, 0xFF0A0A0B)
                 // Teclas multimedia y tarjeta de Windows (al cambiar el volumen, pantalla de bloqueo…).
@@ -170,6 +174,14 @@ fun main(args: Array<String>) {
                             MediaControls.Button.PAUSE, MediaControls.Button.STOP -> app.player.pause()
                             MediaControls.Button.NEXT -> app.player.next()
                             MediaControls.Button.PREVIOUS -> app.player.previous()
+                        }
+                    }
+                    // Anterior / pausa / siguiente en la miniatura de la barra de tareas (como Spotify).
+                    TaskbarButtons.start(hwnd) { button ->
+                        when (button) {
+                            TaskbarButtons.Button.PREVIOUS -> app.player.previous()
+                            TaskbarButtons.Button.PLAY_PAUSE -> app.player.togglePlay()
+                            TaskbarButtons.Button.NEXT -> app.player.next()
                         }
                     }
                 }
@@ -225,6 +237,37 @@ fun main(args: Array<String>) {
                 })
             }
         }
+
+        // Pantalla completa: una ventana sin bordes del tamaño de la pantalla donde está Lyra
+        // (Windows esconde la barra de tareas mientras está delante).
+        if (actions.fullScreen) {
+            val screen = remember {
+                (mainWindow?.graphicsConfiguration ?: java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment().defaultScreenDevice.defaultConfiguration).bounds
+            }
+            val fullState = rememberWindowState(position = WindowPosition(screen.x.dp, screen.y.dp), size = DpSize(screen.width.dp, screen.height.dp))
+            Window(
+                onCloseRequest = { actions.fullScreen = false },
+                state = fullState,
+                title = title,
+                icon = icon,
+                undecorated = true,
+                resizable = false,
+                onKeyEvent = { event ->
+                    if (event.type == KeyEventType.KeyDown && (event.key == Key.Escape || event.key == Key.F11)) {
+                        actions.fullScreen = false
+                        true
+                    } else {
+                        shortcuts(event, actions)
+                    }
+                },
+            ) {
+                LaunchedEffect(Unit) {
+                    window.toFront()
+                    window.requestFocus()
+                }
+                FullScreenPlayer(actions, onExit = { actions.fullScreen = false })
+            }
+        }
     }
 }
 
@@ -253,6 +296,7 @@ private fun shortcuts(event: KeyEvent, actions: LyraActions): Boolean {
         }
         ctrl && event.key == Key.S -> { player.setShuffle(!player.state.value.shuffle); true }
         ctrl && event.key == Key.R -> { player.cycleRepeat(); true }
+        event.key == Key.F11 -> { actions.fullScreen = !actions.fullScreen; true }
         event.isAltPressed && event.key == Key.DirectionLeft -> actions.nav.goBack()
         event.isAltPressed && event.key == Key.DirectionRight -> actions.nav.goForward()
         // Si Windows ya nos manda las teclas multimedia, no se repiten aquí.

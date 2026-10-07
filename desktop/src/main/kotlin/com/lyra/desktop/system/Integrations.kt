@@ -6,6 +6,7 @@ import com.lyra.music.data.model.Source
 import com.lyra.music.data.model.remoteId
 import com.lyra.music.data.source.innertube.hiResArtwork
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.isActive
@@ -19,9 +20,11 @@ object Integrations {
         app.scope.launch {
             combine(app.player.state, app.settings.flow) { state, settings ->
                 Triple(state.current?.song, state.isPlaying, settings.discordPresence)
-            }.distinctUntilChanged().collect { (song, playing, discord) ->
+            }.distinctUntilChanged().collectLatest { (song, playing, discord) ->
+                // «Latest»: si cambia algo durante la espera de Discord, Windows se entera ya.
                 MediaControls.update(song?.title, song?.artistsText, song?.album?.title, song?.thumbnailUrl?.let { hiResArtwork(it, 600) ?: it })
                 MediaControls.setPlaying(if (song == null) null else playing)
+                TaskbarButtons.setPlaying(if (song == null) null else playing)
                 if (discord && song != null && playing) {
                     // Un momento, para que la posición y la duración ya sean las de la canción nueva.
                     delay(1_200)

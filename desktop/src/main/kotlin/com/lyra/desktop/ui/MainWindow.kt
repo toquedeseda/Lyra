@@ -155,37 +155,44 @@ private fun TopBar() {
     LaunchedEffect(actions.focusSearch) {
         if (actions.focusSearch > 0) runCatching { searchFocus.requestFocus() }
     }
-    Row(Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-        RoundNav(Icons.AutoMirrored.Rounded.ArrowBack, "Atrás", nav.canGoBack) { nav.goBack() }
-        Spacer(Modifier.width(8.dp))
-        RoundNav(Icons.AutoMirrored.Rounded.ArrowForward, "Adelante", nav.canGoForward) { nav.goForward() }
-        Spacer(Modifier.width(16.dp))
-        SearchBox(
-            value = query,
-            onValueChange = { text ->
-                query = text
-                val current = nav.current.screen
-                if (current is Screen.Search) nav.replace(current.copy(query = text)) else nav.navigate(Screen.Search(text))
-            },
-            placeholder = "¿Qué quieres escuchar?",
-            modifier = Modifier.widthIn(max = 420.dp).weight(1f, fill = false).width(420.dp),
-            focusRequester = searchFocus,
-            onSubmit = { if (query.isNotBlank()) app.library.addSearch(query) },
-        )
-        Spacer(Modifier.weight(1f))
-        val update by app.updater.state.collectAsState()
-        if (update is UpdateState.Available || update is UpdateState.Ready) {
-            FilledPill(
-                when (update) {
-                    is UpdateState.Ready -> "Reiniciar para actualizar"
-                    else -> "Actualizar Lyra"
-                },
-                onClick = { app.updater.install(beforeExit = { app.shutdown() }) },
-                icon = Icons.Rounded.SystemUpdateAlt,
-            )
-            Spacer(Modifier.width(8.dp))
+    val update by app.updater.state.collectAsState()
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        // Con poco sitio (ventana estrecha y la cola abierta), el aviso de actualizar se acorta.
+        val roomy = maxWidth >= 700.dp
+        val tiny = maxWidth < 520.dp
+        Row(Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            // El buscador ocupa lo que haya (hasta 420) antes que el hueco: no se encoge por el botón de actualizar.
+            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                RoundNav(Icons.AutoMirrored.Rounded.ArrowBack, "Atrás", nav.canGoBack) { nav.goBack() }
+                Spacer(Modifier.width(8.dp))
+                RoundNav(Icons.AutoMirrored.Rounded.ArrowForward, "Adelante", nav.canGoForward) { nav.goForward() }
+                Spacer(Modifier.width(16.dp))
+                SearchBox(
+                    value = query,
+                    onValueChange = { text ->
+                        query = text
+                        val current = nav.current.screen
+                        if (current is Screen.Search) nav.replace(current.copy(query = text)) else nav.navigate(Screen.Search(text))
+                    },
+                    placeholder = "¿Qué quieres escuchar?",
+                    modifier = Modifier.widthIn(max = 420.dp).fillMaxWidth(),
+                    focusRequester = searchFocus,
+                    onSubmit = { if (query.isNotBlank()) app.library.addSearch(query) },
+                )
+                Spacer(Modifier.width(12.dp))
+            }
+            if (update is UpdateState.Available || update is UpdateState.Ready) {
+                val label = if (update is UpdateState.Ready) "Reiniciar para actualizar" else "Actualizar Lyra"
+                val install = { app.updater.install(beforeExit = { app.shutdown() }) }
+                when {
+                    tiny -> IconBtn(Icons.Rounded.SystemUpdateAlt, label, onClick = install, tint = LyraColors.Accent, hoverTint = LyraColors.Accent)
+                    roomy -> FilledPill(label, onClick = install, icon = Icons.Rounded.SystemUpdateAlt)
+                    else -> FilledPill("Actualizar", onClick = install, icon = Icons.Rounded.SystemUpdateAlt)
+                }
+                Spacer(Modifier.width(8.dp))
+            }
+            IconBtn(Icons.Rounded.Settings, "Ajustes", onClick = { nav.navigate(Screen.Settings) }, active = screen == Screen.Settings)
         }
-        IconBtn(Icons.Rounded.Settings, "Ajustes", onClick = { nav.navigate(Screen.Settings) }, active = screen == Screen.Settings)
     }
 }
 
