@@ -28,12 +28,18 @@ class HlsFetcher(private val http: OkHttpClient) {
 
         target.parentFile?.mkdirs()
         val partial = File(target.path + ".part")
-        partial.outputStream().buffered().use { out ->
-            if (init != null) out.write(fetchBytes(resolve(url, init)))
-            segments.forEachIndexed { index, segment ->
-                out.write(fetchBytes(resolve(url, segment)))
-                onProgress((index + 1f) / segments.size)
+        try {
+            partial.outputStream().buffered().use { out ->
+                if (init != null) out.write(fetchBytes(resolve(url, init)))
+                segments.forEachIndexed { index, segment ->
+                    out.write(fetchBytes(resolve(url, segment)))
+                    onProgress((index + 1f) / segments.size)
+                }
             }
+        } catch (e: Throwable) {
+            // Cortada a medias: no se deja el trozo (ni en la caché ni en la carpeta de descargas).
+            partial.delete()
+            throw e
         }
         if (!partial.renameTo(target)) {
             partial.copyTo(target, overwrite = true)

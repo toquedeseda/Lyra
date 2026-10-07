@@ -106,9 +106,22 @@ class AppContainer(val app: Application) {
         _events.trySend(event)
     }
 
+    /** Lo de SoundCloud que llega en trozos (HLS), ya juntado en un archivo. */
+    private val hlsDir: File get() = File(app.cacheDir, "hls")
+
+    /** Lo que ocupa la caché de lo escuchado: la del reproductor y lo juntado de SoundCloud. */
+    fun cacheBytes(): Long = playerCache.cacheSpace + (hlsDir.listFiles()?.sumOf { it.length() } ?: 0L)
+
     /** Vacía la caché de reproducción (no toca las descargas). */
     fun clearPlayerCache() {
         playerCache.keys.toList().forEach { runCatching { playerCache.removeResource(it) } }
+        hlsDir.listFiles()?.forEach { it.delete() }
+    }
+
+    /** Lo de SoundCloud que lleva un mes sin sonar se borra (si vuelve a sonar, se baja otra vez). */
+    fun trimHlsCache(maxAgeMs: Long = 30L * 86_400_000) {
+        val oldest = System.currentTimeMillis() - maxAgeMs
+        hlsDir.listFiles()?.filter { it.lastModified() < oldest }?.forEach { it.delete() }
     }
 }
 

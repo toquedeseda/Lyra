@@ -78,7 +78,7 @@ fun SettingsScreen(contentPadding: PaddingValues) {
     val downloadBytes by container.downloads.totalBytes.collectAsState(initial = 0L)
     var cacheBytes by remember { mutableLongStateOf(0L) }
     var cacheVersion by remember { mutableIntStateOf(0) }
-    LaunchedEffect(cacheVersion) { cacheBytes = withContext(Dispatchers.IO) { container.playerCache.cacheSpace } }
+    LaunchedEffect(cacheVersion) { cacheBytes = withContext(Dispatchers.IO) { container.cacheBytes() } }
 
     var qualityDialog by remember { mutableStateOf<String?>(null) }
     var regionDialog by remember { mutableStateOf(false) }

@@ -174,6 +174,8 @@ class LyraActions(val app: AppContainer, val nav: Navigator) {
             when {
                 added == 0 -> "Ya estaba en «${playlist.name}»"
                 songs.size == 1 -> "Añadida a «${playlist.name}»"
+                added == 1 -> "1 canción añadida a «${playlist.name}» (las demás ya estaban)"
+                added < songs.size -> "$added canciones añadidas a «${playlist.name}» (las demás ya estaban)"
                 else -> "$added canciones añadidas a «${playlist.name}»"
             },
             "Abrir",

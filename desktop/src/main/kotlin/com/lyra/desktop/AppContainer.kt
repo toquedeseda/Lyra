@@ -19,6 +19,7 @@ import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import okhttp3.Cache
 import okhttp3.OkHttpClient
 import java.io.File
@@ -62,8 +63,10 @@ class AppContainer {
     val newPipe = NewPipeSource(http)
     val music = MusicRepository(innerTube, newPipe)
     val alternatives = AlternativeSources(newPipe, innerTube, { id -> library.song(id) }, Paths.alternatives)
-    val resolver = StreamResolver(newPipe, alternatives, http, Paths.hlsCache) { settings.current.streamQuality }
     val audioCache = AudioCache(Paths.audioCache, http) { settings.current.cacheLimitMb.toLong() * 1024 * 1024 }
+
+    /** Lo de SoundCloud que llega en trozos (HLS) se junta directamente en la caché de lo escuchado. */
+    val resolver = StreamResolver(newPipe, alternatives, http, audioCache::fileFor) { settings.current.streamQuality }
     val downloads = Downloads(File(Paths.data, "descargas.json"), resolver, http, settings, scope)
     val player = PlayerController(scope, settings, library, music, resolver, audioCache, downloads::localFile, Paths.queue)
     val lyrics = LyricsRepository(Lrclib(http), innerTube, Paths.lyricsCache)
@@ -72,6 +75,11 @@ class AppContainer {
     val spotify = SpotifyImporter(http, innerTube)
     val updater = com.lyra.desktop.update.Updater(http, scope) { settings.current.checkUpdates }
     val sync = com.lyra.desktop.sync.SyncManager(http, library, settings, File(Paths.data, "sincronizacion.json"), scope)
+
+    init {
+        // La carpeta antigua de SoundCloud (hasta la 1.10.1 crecía sin límite): ya no se usa.
+        scope.launch(Dispatchers.IO) { runCatching { Paths.oldHlsCache.deleteRecursively() } }
+    }
 
     /** Al cerrar: guarda todo ya (sin esperar a los guardados automáticos). */
     fun shutdown() {

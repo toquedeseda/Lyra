@@ -445,6 +445,8 @@ class PlayerController(
             ?: run {
                 val first = resolver.resolveBlocking(song.id, song)
                 if (first.file != null) {
+                    // SoundCloud en trozos: ya está entera en la caché; que no pase del límite.
+                    cache.trim()
                     FileInput(first.file)
                 } else {
                     cache.open(song.id) { refresh ->

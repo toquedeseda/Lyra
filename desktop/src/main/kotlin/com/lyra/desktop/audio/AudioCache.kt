@@ -59,9 +59,12 @@ class AudioCache(private val dir: File, private val http: OkHttpClient, private 
 
     fun keyFor(songId: String): String = songId.replace(Regex("[^A-Za-z0-9._-]"), "_")
 
+    /** Dónde queda una canción entera en la caché (también lo de SoundCloud que llega en trozos). */
+    fun fileFor(songId: String): File = File(dir, keyFor(songId) + ".audio")
+
     /** El archivo entero, si ya se bajó del todo. */
     fun completeFile(songId: String): File? =
-        File(dir, keyFor(songId) + ".audio").takeIf { it.isFile && it.length() > 0 }
+        fileFor(songId).takeIf { it.isFile && it.length() > 0 }
 
     fun isComplete(songId: String): Boolean = completeFile(songId) != null
 

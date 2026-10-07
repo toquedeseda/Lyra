@@ -70,6 +70,19 @@ fun rememberProgress(): Pair<Long, Long> {
     return value
 }
 
+/** Si está esperando al audio (el circulito del botón). Se mira solo: no avisa al cambiar. */
+@Composable
+private fun rememberBuffering(): Boolean {
+    val app = LocalActions.current.app
+    val value by produceState(false) {
+        while (true) {
+            value = app.player.buffering
+            delay(150)
+        }
+    }
+    return value
+}
+
 /** La barra de abajo: lo que suena, los controles con el progreso y el volumen. */
 @Composable
 fun PlayerBar(onToggleMini: () -> Unit, modifier: Modifier = Modifier) {
@@ -79,6 +92,7 @@ fun PlayerBar(onToggleMini: () -> Unit, modifier: Modifier = Modifier) {
     val settings by app.settings.flow.collectAsState()
     val liked by app.library.likedIds.collectAsState()
     val current = state.current?.song
+    val buffering = rememberBuffering()
     Row(modifier.padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         // Izquierda: portada, título, artistas y corazón.
         Row(Modifier.weight(0.3f), verticalAlignment = Alignment.CenterVertically) {
@@ -129,7 +143,7 @@ fun PlayerBar(onToggleMini: () -> Unit, modifier: Modifier = Modifier) {
                 IconBtn(Icons.Rounded.SkipPrevious, "Anterior", onClick = { app.player.previous() }, iconSize = 26.dp, enabled = current != null, tint = LyraColors.TextPrimary)
                 Box(contentAlignment = Alignment.Center) {
                     PlayButton(state.isPlaying, onClick = { app.player.togglePlay() }, size = 38.dp)
-                    if (state.isPlaying && app.player.buffering) {
+                    if (state.isPlaying && buffering) {
                         CircularProgressIndicator(color = LyraColors.OnAccent, strokeWidth = 2.dp, modifier = Modifier.size(38.dp))
                     }
                 }

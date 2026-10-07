@@ -479,6 +479,9 @@ class Library(private val file: File, private val scope: CoroutineScope) {
             }
             return Keys(p.name, p.createdAt, last, count)
         }
+        // Solo cuentan las canciones que han sonado (las demás suman 0): muchas menos que todas las
+        // conocidas, que crecen sin parar con la radio.
+        val played = data.stats.keys.mapNotNull { data.songs[it] }
         val byFolder = data.playlists.groupBy { it.folderId }
         val folders = data.folders.map { folder ->
             val inside = byFolder[folder.id].orEmpty()
@@ -487,7 +490,7 @@ class Library(private val file: File, private val scope: CoroutineScope) {
         }
         val loose = byFolder[null].orEmpty().map { LibraryEntry.Playlist(it) to playlistKeys(it) }
         val albums = data.albums.map { saved ->
-            val songs = data.songs.values.filter { it.album?.id == saved.album.id }
+            val songs = played.filter { it.album?.id == saved.album.id }
             LibraryEntry.Album(saved) to Keys(
                 saved.album.title, saved.savedAt,
                 maxOf(saved.savedAt, songs.maxOfOrNull { lastPlayed[it.id] ?: 0 } ?: 0),
@@ -495,7 +498,7 @@ class Library(private val file: File, private val scope: CoroutineScope) {
             )
         }
         val artists = data.artists.map { followed ->
-            val songs = data.songs.values.filter { s -> s.artists.any { it.id == followed.artist.id || it.name.equals(followed.artist.title, true) } }
+            val songs = played.filter { s -> s.artists.any { it.id == followed.artist.id || it.name.equals(followed.artist.title, true) } }
             LibraryEntry.Artist(followed) to Keys(
                 followed.artist.title, followed.followedAt,
                 maxOf(followed.followedAt, songs.maxOfOrNull { lastPlayed[it.id] ?: 0 } ?: 0),

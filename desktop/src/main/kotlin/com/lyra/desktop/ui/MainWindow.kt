@@ -426,7 +426,7 @@ private fun AddToPlaylistDialog(songs: List<com.lyra.music.data.model.Song>) {
                             Column(Modifier.weight(1f)) {
                                 Text(playlist.name, style = MaterialTheme.typography.bodyLarge, color = LyraColors.TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Text(
-                                    if (has) "Ya está" else "${playlist.songIds.size} canciones",
+                                    if (has) "Ya está" else com.lyra.desktop.ui.screens.songCount(playlist.songIds.size),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = if (has) LyraColors.Accent else LyraColors.TextSecondary,
                                 )

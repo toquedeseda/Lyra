@@ -48,7 +48,12 @@ class StreamResolver(
     suspend fun resolve(songId: String, quality: AudioQuality = settings.current.streamQuality, hint: Song? = null): Resolved {
         val lock = locks.getOrPut(songId) { Mutex() }
         return lock.withLock {
-            memo[songId]?.takeIf { it.expiresAt > System.currentTimeMillis() + 60_000 }?.let { return@withLock it }
+            // Lo juntado de SoundCloud vale mientras siga en la caché (se puede vaciar o borrar por viejo).
+            memo[songId]?.takeIf { it.expiresAt > System.currentTimeMillis() + 60_000 && (!it.isLocalFile || localFileOf(it)?.isFile == true) }
+                ?.let { cached ->
+                    if (cached.isLocalFile) localFileOf(cached)?.setLastModified(System.currentTimeMillis())
+                    return@withLock cached
+                }
             // Si YouTube no deja sacar ese vídeo, se usa otra versión de la misma canción.
             val streams = alternatives.audioStreams(songId, hint)
             val chosen = NewPipeSource.pick(streams, quality, portable = songId in portableOnly)
@@ -56,6 +61,7 @@ class StreamResolver(
             val resolved = if (chosen.isHls) {
                 val file = File(cacheDir, "hls/${songId.replace(Regex("[^A-Za-z0-9._-]"), "_")}.${chosen.extension}")
                 if (!file.exists() || file.length() == 0L) HlsFetcher(http).download(chosen.url, file) { }
+                file.setLastModified(System.currentTimeMillis())
                 Resolved(Uri.fromFile(file).toString(), chosen.mimeType, chosen.extension, chosen.bitrate,
                     file.length(), isLocalFile = true, expiresAt = Long.MAX_VALUE)
             } else {
@@ -75,6 +81,9 @@ class StreamResolver(
     fun invalidate(songId: String) {
         memo.remove(songId)
     }
+
+    /** El archivo de un [Resolved] local (lo juntado de SoundCloud). */
+    private fun localFileOf(resolved: Resolved): File? = Uri.parse(resolved.uri).path?.let(::File)
 
     /** La próxima vez se pide en M4A. Devuelve false si ya se había probado (para no repetir sin fin). */
     fun preferPortable(songId: String): Boolean {

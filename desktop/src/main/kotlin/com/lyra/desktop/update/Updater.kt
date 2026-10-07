@@ -103,7 +103,8 @@ class Updater(private val http: OkHttpClient, private val scope: CoroutineScope,
         http.newCall(builder.build()).execute().use { response ->
             // 304: no ha cambiado (y no gasta del límite de GitHub).
             if (response.code == 304) return@withContext cached
-            if (!response.isSuccessful) return@withContext null
+            // Sin conexión o GitHub frenando: que se sepa (no es lo mismo que «no hay versión nueva»).
+            if (!response.isSuccessful) throw IOException("GitHub respondió ${response.code}")
             etag = response.header("ETag")
             json.decodeFromString(Release.serializer(), response.body.string()).takeIf { !it.draft && !it.prerelease }.also { cached = it }
         }
@@ -150,7 +151,7 @@ class Updater(private val http: OkHttpClient, private val scope: CoroutineScope,
      */
     fun install(beforeExit: () -> Unit = {}, exit: () -> Unit = { kotlin.system.exitProcess(0) }) {
         val ready = _state.value as? UpdateState.Ready ?: run {
-            scope.launch { check() }
+            scope.launch { runCatching { check() } }
             return
         }
         val launcher = launcherPath() ?: return

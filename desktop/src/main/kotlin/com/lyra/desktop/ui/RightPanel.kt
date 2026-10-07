@@ -38,9 +38,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
@@ -211,8 +213,22 @@ private fun SyncedLyrics(lyrics: Lyrics) {
     // La línea que suena (un pelín adelantada, como en el móvil).
     val active = lines.indexOfLast { it.timeMs <= position + 250 }
     val list = rememberLazyListState()
+    // Si mueves tú la letra, no se recoloca hasta unos segundos después (como en Spotify).
+    var userScrolledAt by remember { mutableLongStateOf(0L) }
+    var autoScrolling by remember { mutableStateOf(false) }
+    LaunchedEffect(list) {
+        snapshotFlow { list.isScrollInProgress }.collect { scrolling ->
+            if (scrolling && !autoScrolling) userScrolledAt = System.currentTimeMillis()
+        }
+    }
     LaunchedEffect(active) {
-        if (active >= 0) list.animateScrollToItem((active - 3).coerceAtLeast(0))
+        if (active < 0 || System.currentTimeMillis() - userScrolledAt < 4_000) return@LaunchedEffect
+        autoScrolling = true
+        try {
+            list.animateScrollToItem((active - 3).coerceAtLeast(0))
+        } finally {
+            autoScrolling = false
+        }
     }
     Box(Modifier.fillMaxSize()) {
         LazyColumn(state = list, contentPadding = PaddingValues(start = 22.dp, end = 22.dp, top = 12.dp, bottom = 220.dp)) {

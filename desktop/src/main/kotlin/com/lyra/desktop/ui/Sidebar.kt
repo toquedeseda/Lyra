@@ -70,6 +70,7 @@ import com.lyra.desktop.ui.components.SpecialCover
 import com.lyra.desktop.ui.components.LocalNowPlaying
 import com.lyra.desktop.ui.components.LyraMenu
 import com.lyra.music.data.model.PlaylistItem
+import com.lyra.desktop.ui.screens.songCount
 
 /** La barra de la izquierda: Inicio, Buscar y tu biblioteca, como en Spotify. */
 @Composable
@@ -165,7 +166,7 @@ private fun LibraryPanel(modifier: Modifier) {
                     item(key = "liked") {
                         LibraryRow(
                             title = "Canciones que te gustan",
-                            subtitle = "Playlist · ${data.liked.size} canciones",
+                            subtitle = "Playlist · " + songCount(data.liked.size),
                             cover = { SpecialCover(Icons.Rounded.Favorite, it) },
                             onClick = { actions.nav.navigate(Screen.Liked) },
                             selected = actions.nav.current.screen == Screen.Liked,
@@ -176,7 +177,7 @@ private fun LibraryPanel(modifier: Modifier) {
                         val count = downloads.values.count { it.status == com.lyra.desktop.data.DownloadStatus.DONE }
                         LibraryRow(
                             title = "Descargas",
-                            subtitle = "$count canciones sin conexión",
+                            subtitle = songCount(count) + " sin conexión",
                             cover = { SpecialCover(Icons.Rounded.ArrowDownward, it, filled = false) },
                             onClick = { actions.nav.navigate(Screen.Downloads) },
                             selected = actions.nav.current.screen == Screen.Downloads,
@@ -243,7 +244,7 @@ private fun LibraryEntryRow(entry: LibraryEntry, contextId: String?, playing: Bo
             val songs = playlist.songIds
             LibraryRow(
                 title = playlist.name,
-                subtitle = "Playlist · ${songs.size} canciones",
+                subtitle = "Playlist · " + songCount(songs.size),
                 cover = { mod ->
                     val custom = playlist.customCover ?: playlist.coverUrl
                     if (custom != null) Cover(custom, mod) else Mosaic(songs.take(8).map { data.songs[it]?.thumbnailUrl }, mod)

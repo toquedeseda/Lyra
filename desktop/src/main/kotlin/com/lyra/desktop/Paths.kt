@@ -20,7 +20,8 @@ object Paths {
 
     val cache: File = File(data, "cache").apply { mkdirs() }
     val audioCache: File = File(cache, "audio")
-    val hlsCache: File = File(cache, "hls")
+    /** Donde se juntaba antes lo de SoundCloud (ahora va a [audioCache]); se borra al abrir. */
+    val oldHlsCache: File = File(cache, "hls")
     val imageCache: File = File(cache, "imagenes")
     val httpCache: File = File(cache, "http")
     val natives: File = File(cache, "nativos")

@@ -1,7 +1,10 @@
 package com.lyra.desktop
 
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.ImageComposeScene
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.use
 import coil3.ImageLoader
@@ -19,10 +22,12 @@ import java.io.File
 
 /**
  * Capturas de las pantallas de Lyra para Windows sin abrir ninguna ventana (para revisarlas).
- * Solo con LYRA_UI_SHOTS=1; se guardan en desktop/build/capturas.
+ * Solo con LYRA_UI_SHOTS=1; se guardan en desktop/build/capturas. «ajustes~12» baja 12 pasos de
+ * la rueda del ratón en el centro antes de capturar.
  */
 class UiShotsTest {
 
+    @OptIn(ExperimentalComposeUiApi::class)
     @Test
     fun capturas() {
         assumeTrue(System.getenv("LYRA_UI_SHOTS") == "1")
@@ -33,7 +38,9 @@ class UiShotsTest {
         }
         val out = File("build/capturas").apply { mkdirs() }
         val screens = (System.getenv("LYRA_UI_SCREENS") ?: "home").split(',')
-        for (name in screens) {
+        for (entry in screens) {
+            val name = entry.substringBefore('~')
+            val wheel = entry.substringAfter('~', "0").toIntOrNull() ?: 0
             val nav = Navigator()
             val actions = LyraActions(app, nav)
             when {
@@ -60,8 +67,15 @@ class UiShotsTest {
                     Thread.sleep(150)
                     time += 150_000_000L
                 }
+                repeat(wheel) {
+                    scene.sendPointerEvent(PointerEventType.Scroll, Offset(620f, 400f), scrollDelta = Offset(0f, 1f))
+                    repeat(4) {
+                        time += 50_000_000L
+                        scene.render(time)
+                    }
+                }
                 val image = scene.render(time)
-                val file = File(out, name.replace(Regex("[^A-Za-z0-9_-]"), "_") + ".png")
+                val file = File(out, entry.replace(Regex("[^A-Za-z0-9_-]"), "_") + ".png")
                 file.writeBytes(image.encodeToData(EncodedImageFormat.PNG)!!.bytes)
                 println("captura: ${file.absolutePath}")
             }

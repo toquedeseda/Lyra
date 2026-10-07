@@ -51,6 +51,22 @@ fun SyncGroup() {
     var busy by remember { mutableStateOf(false) }
     var shownCode by remember { mutableStateOf<SyncCode?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    val canPair = !busy && code.count { it.isLetterOrDigit() } == 6
+
+    fun pair() {
+        if (!canPair) return
+        busy = true
+        error = null
+        scope.launch {
+            runCatching { sync.join(code) }
+                .onSuccess {
+                    code = ""
+                    actions.message("¡Listo! Tu biblioteca ya está sincronizada")
+                }
+                .onFailure { error = it.message ?: "No se pudo emparejar" }
+            busy = false
+        }
+    }
 
     Column(Modifier.padding(horizontal = PagePadding, vertical = 14.dp).widthIn(max = 860.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 4.dp)) {
@@ -69,30 +85,20 @@ fun SyncGroup() {
                 s.message?.let {
                     Text(it, style = MaterialTheme.typography.bodySmall, color = LyraColors.Like, modifier = Modifier.padding(bottom = 8.dp))
                 }
-                Text("Si ya la tienes en el móvil: Ajustes → Sincronizar con el PC → Activar, y escribe aquí el código que te da.", style = MaterialTheme.typography.bodyMedium, color = LyraColors.TextPrimary)
+                Text("En el móvil: Ajustes → Biblioteca sincronizada → Activar, y escribe aquí el código que te da.", style = MaterialTheme.typography.bodyMedium, color = LyraColors.TextPrimary)
                 Spacer(Modifier.height(10.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    LyraTextField(code, { code = it.uppercase().take(7) }, "Código (p. ej. K7P-2MX)", Modifier.width(240.dp), onSubmit = {})
+                    // Con Intro también se empareja.
+                    LyraTextField(code, { code = it.uppercase().take(7) }, "Código (p. ej. K7P-2MX)", Modifier.width(240.dp), onSubmit = ::pair)
                     Spacer(Modifier.width(10.dp))
-                    FilledPill(if (busy) "Emparejando…" else "Emparejar", enabled = !busy && code.count { it.isLetterOrDigit() } == 6, onClick = {
-                        busy = true
-                        error = null
-                        scope.launch {
-                            runCatching { sync.join(code) }
-                                .onSuccess {
-                                    code = ""
-                                    actions.message("¡Listo! Tu biblioteca ya está sincronizada")
-                                }
-                                .onFailure { error = it.message ?: "No se pudo emparejar" }
-                            busy = false
-                        }
-                    })
+                    FilledPill(if (busy) "Emparejando…" else "Emparejar", enabled = canPair, onClick = ::pair)
                 }
                 Spacer(Modifier.height(14.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("¿Empiezas por el PC?", style = MaterialTheme.typography.bodyMedium, color = LyraColors.TextSecondary)
                     Spacer(Modifier.width(10.dp))
-                    OutlinePill("Activar aquí y ver el código", onClick = {
+                    OutlinePill(if (busy) "Activando…" else "Activar aquí y ver el código", onClick = {
+                        if (busy) return@OutlinePill
                         busy = true
                         error = null
                         scope.launch {

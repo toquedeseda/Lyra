@@ -195,15 +195,16 @@ fun SettingsScreen() {
                     } else if (app.updater.supported) {
                         OutlinePill("Buscar ahora", onClick = {
                             scope.launch {
-                                val found = runCatching { app.updater.check() }.getOrNull()
-                                if (found == null) actions.message("Tienes la última versión")
+                                runCatching { app.updater.check() }
+                                    .onSuccess { found -> if (found == null) actions.message("Tienes la última versión") }
+                                    .onFailure { actions.message("No se pudo mirar si hay versión nueva. Comprueba la conexión.") }
                             }
                         })
                     }
                 }
                 Toggle("Actualizar sola", "Busca versiones nuevas al abrir y cada media hora.", s.checkUpdates) { update { copy(checkUpdates = it) } }
                 val errors by ErrorLog.entries.collectAsState()
-                SettingRow("Informe de errores", if (errors.isEmpty()) "No hay errores apuntados." else "${errors.size} apuntados (cierres, canciones que no sonaron…).") {
+                SettingRow("Informe de errores", if (errors.isEmpty()) "No hay errores apuntados." else (if (errors.size == 1) "1 apuntado" else "${errors.size} apuntados") + " (cierres, canciones que no sonaron…).") {
                     if (errors.isNotEmpty()) {
                         OutlinePill("Copiar", onClick = {
                             actions.copy(ErrorLog.report())

@@ -22,7 +22,8 @@ class StreamResolver(
     private val newPipe: NewPipeSource,
     private val alternatives: AlternativeSources,
     private val http: OkHttpClient,
-    private val hlsDir: File,
+    /** Dónde juntar lo que llega en trozos (HLS): la caché de lo escuchado, que tiene límite. */
+    private val hlsFile: (songId: String) -> File,
     private val quality: () -> AudioQuality,
 ) {
     data class Resolved(
@@ -43,13 +44,15 @@ class StreamResolver(
     suspend fun resolve(songId: String, hint: Song? = null): Resolved {
         val lock = locks.getOrPut(songId) { Mutex() }
         return lock.withLock {
-            memo[songId]?.takeIf { it.expiresAt > System.currentTimeMillis() + 60_000 }?.let { return@withLock it }
+            // Lo juntado de SoundCloud vale mientras siga en la caché (que se vacía sola si se llena).
+            memo[songId]?.takeIf { it.expiresAt > System.currentTimeMillis() + 60_000 && (it.file == null || it.file.isFile) }?.let { return@withLock it }
             val streams = alternatives.audioStreams(songId, hint)
             val chosen = NewPipeSource.pick(streams, quality(), portable = songId in portableOnly)
                 ?: throw IOException("Esta canción no tiene audio disponible")
             val resolved = if (chosen.isHls) {
-                val file = File(hlsDir, songId.replace(Regex("[^A-Za-z0-9._-]"), "_") + "." + chosen.extension)
+                val file = hlsFile(songId)
                 if (!file.isFile || file.length() == 0L) HlsFetcher(http).download(chosen.url, file) { }
+                file.setLastModified(System.currentTimeMillis())
                 Resolved(null, file, file.length(), chosen.mimeType, chosen.bitrate, Long.MAX_VALUE)
             } else {
                 chosen.toResolved()
