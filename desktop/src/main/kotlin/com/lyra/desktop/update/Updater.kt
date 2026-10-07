@@ -62,6 +62,21 @@ class Updater(private val http: OkHttpClient, private val scope: CoroutineScope,
         }
     }
 
+    /** Las notas de una versión ya publicada (para «Novedades» después de actualizar). */
+    suspend fun notesFor(version: String): String? = withContext(Dispatchers.IO) {
+        runCatching {
+            val request = Request.Builder()
+                .url("https://api.github.com/repos/${BuildInfo.UPDATE_REPO}/releases/tags/v$version")
+                .header("Accept", "application/vnd.github+json")
+                .header("User-Agent", "Lyra-Windows/${BuildInfo.VERSION}")
+                .build()
+            http.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@use null
+                cleanNotes(json.decodeFromString(Release.serializer(), response.body.string()).body).ifBlank { null }
+            }
+        }.getOrNull()
+    }
+
     /** Mira ahora mismo si hay versión nueva. Devuelve la versión encontrada (o null). */
     suspend fun check(): String? = lock.withLock {
         val release = latest() ?: return@withLock null

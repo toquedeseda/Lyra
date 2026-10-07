@@ -18,11 +18,13 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Notification
 import androidx.compose.ui.window.Tray
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
+import androidx.compose.ui.window.rememberTrayState
 import androidx.compose.ui.window.rememberWindowState
 import coil3.ImageLoader
 import coil3.SingletonImageLoader
@@ -40,11 +42,14 @@ import com.lyra.desktop.ui.MainContent
 import com.lyra.desktop.ui.MiniPlayerContent
 import com.lyra.desktop.ui.Navigator
 import com.lyra.desktop.ui.Screen
+import com.lyra.desktop.ui.components.Typing
 import com.lyra.music.data.share.PlaylistSharing
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import okio.Path.Companion.toOkioPath
 import org.jetbrains.skia.Image
@@ -107,15 +112,33 @@ fun main(args: Array<String>) {
             size = if (saved != null) DpSize(saved.width.dp, saved.height.dp) else DpSize(1280.dp, 820.dp),
         )
         val icon = remember { iconPainter(256) }
+        val trayState = rememberTrayState()
+        // Como Spotify: lo que suena en el título de la ventana (y al pasar por la barra de tareas).
+        val playing by remember {
+            app.player.state.map { s -> s.current?.song?.takeIf { s.isPlaying } }.distinctUntilChanged()
+        }.collectAsState(null)
+        val title = playing?.let { song -> listOf(song.artistsText, song.title).filter { it.isNotBlank() }.joinToString(" - ") } ?: "Lyra"
         fun quit() {
             app.shutdown()
             exitApplication()
         }
 
+        fun hideToTray() {
+            visible = false
+            // La primera vez, que se sepa que sigue ahí (y cómo cerrarla del todo).
+            if (!app.settings.current.trayHintShown) {
+                app.settings.update { it.copy(trayHintShown = true) }
+                trayState.sendNotification(
+                    Notification("Lyra sigue abierta", "La música sigue sonando. Para cerrarla del todo: clic derecho en este icono → Salir.", Notification.Type.None),
+                )
+            }
+        }
+
         if (settings.closeToTray || !visible) {
             Tray(
                 icon = remember { iconPainter(32) } ?: icon!!,
-                tooltip = "Lyra",
+                state = trayState,
+                tooltip = if (playing != null) "Lyra · $title" else "Lyra",
                 onAction = { visible = true },
                 menu = {
                     Item("Abrir Lyra", onClick = { visible = true })
@@ -129,9 +152,9 @@ fun main(args: Array<String>) {
         }
 
         Window(
-            onCloseRequest = { if (app.settings.current.closeToTray) visible = false else quit() },
+            onCloseRequest = { if (app.settings.current.closeToTray) hideToTray() else quit() },
             visible = visible,
-            title = "Lyra",
+            title = title,
             icon = icon,
             state = windowState,
             onKeyEvent = { event -> shortcuts(event, actions) },
@@ -217,7 +240,8 @@ private fun shortcuts(event: KeyEvent, actions: LyraActions): Boolean {
     val player = actions.app.player
     val ctrl = event.isCtrlPressed
     return when {
-        event.key == Key.Spacebar && !ctrl -> { player.togglePlay(); true }
+        // Escribiendo en un buscador, el espacio es un espacio (el cuadro de texto no se lo queda).
+        event.key == Key.Spacebar && !ctrl && !Typing.active -> { player.togglePlay(); true }
         ctrl && event.key == Key.DirectionRight -> { player.next(); true }
         ctrl && event.key == Key.DirectionLeft -> { player.previous(); true }
         ctrl && event.key == Key.DirectionUp -> { changeVolume(actions, +0.05f); true }

@@ -4,6 +4,7 @@ import com.lyra.desktop.ErrorLog
 import com.lyra.desktop.data.Library
 import com.lyra.desktop.data.SettingsStore
 import com.lyra.desktop.data.SyncConfig
+import com.lyra.desktop.writeTextSafely
 import com.lyra.music.sync.HttpSyncApi
 import com.lyra.music.sync.SyncCode
 import com.lyra.music.sync.SyncEngine
@@ -97,7 +98,7 @@ class SyncManager(
     private fun loadState(): SyncState = runCatching { json.decodeFromString(SyncState.serializer(), stateFile.readText()) }.getOrDefault(SyncState())
 
     private fun saveState(state: SyncState) {
-        runCatching { stateFile.writeText(json.encodeToString(SyncState.serializer(), state)) }
+        runCatching { stateFile.writeTextSafely(json.encodeToString(SyncState.serializer(), state)) }
     }
 
     /** Sincroniza ya (si está emparejado). Devuelve false si no se pudo. */

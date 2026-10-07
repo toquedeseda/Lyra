@@ -454,6 +454,16 @@ class AudioEngine(private val events: Events) {
                     continue
                 }
                 if (track != null && track.isFinished) continue
+                if (isPausing) {
+                    // Pausa pedida mientras llegaba el audio: no suena nada que apagar, se pausa ya.
+                    lock.withLock {
+                        if (pausing) {
+                            pausing = false
+                            paused = true
+                        }
+                    }
+                    continue
+                }
                 buffering = track != null
                 Thread.sleep(10)
                 continue

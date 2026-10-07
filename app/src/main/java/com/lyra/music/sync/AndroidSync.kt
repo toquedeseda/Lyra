@@ -2,6 +2,7 @@ package com.lyra.music.sync
 
 import android.content.Context
 import android.net.Uri
+import androidx.room.withTransaction
 import com.lyra.music.core.ErrorLog
 import com.lyra.music.data.backup.BackupManager
 import com.lyra.music.data.db.FollowedArtistEntity
@@ -102,19 +103,32 @@ class AndroidSyncManager(
     private fun loadKey(): Saved? = runCatching { json.decodeFromString(Saved.serializer(), keyFile.readText()) }.getOrNull()
 
     private fun saveKey(saved: Saved?) {
-        if (saved == null) keyFile.delete() else runCatching { keyFile.writeText(json.encodeToString(Saved.serializer(), saved)) }
+        if (saved == null) keyFile.delete() else runCatching { keyFile.writeSafely(json.encodeToString(Saved.serializer(), saved)) }
     }
 
     private fun loadState() = runCatching { json.decodeFromString(SyncState.serializer(), stateFile.readText()) }.getOrDefault(SyncState())
 
     private fun saveState(state: SyncState) {
-        runCatching { stateFile.writeText(json.encodeToString(SyncState.serializer(), state)) }
+        runCatching { stateFile.writeSafely(json.encodeToString(SyncState.serializer(), state)) }
     }
 
     private var ids: Ids = runCatching { json.decodeFromString(Ids.serializer(), idsFile.readText()) }.getOrDefault(Ids())
 
     private fun saveIds() {
-        runCatching { idsFile.writeText(json.encodeToString(Ids.serializer(), ids)) }
+        runCatching { idsFile.writeSafely(json.encodeToString(Ids.serializer(), ids)) }
+    }
+
+    /**
+     * Se escribe aparte y luego se cambia por el bueno: si Android cierra la app a medias, el archivo
+     * anterior sigue entero (sin la equivalencia de ids, las playlists saldrían repetidas en el PC).
+     */
+    private fun File.writeSafely(text: String) {
+        val temp = File(path + ".tmp")
+        temp.writeText(text)
+        if (!temp.renameTo(this)) {
+            writeText(text)
+            temp.delete()
+        }
     }
 
     // ------------------------------------------------------------------ acciones
@@ -281,15 +295,21 @@ class AndroidSyncManager(
                         return
                     }
                     val p = SyncJson.decode(PlaylistData.serializer(), d) ?: return
-                    val id = local ?: db.playlists().insert(
-                        PlaylistEntity(name = p.name, description = p.description, createdAt = p.createdAt.takeIf { it > 0 } ?: System.currentTimeMillis()),
-                    ).also { ids = ids.copy(playlists = ids.playlists + (c.k to it)) }
-                    db.playlists().rename(id, p.name, p.description)
-                    db.playlists().setRemote(id, p.remoteId, p.coverUrl)
-                    db.songs().saveAll(p.songs)
-                    db.playlists().clear(id)
-                    db.playlists().addSongs(id, p.songs.map { it.id }.distinct())
-                    db.playlists().setFolder(id, p.folder?.let { ids.folders[it] })
+                    // Todo de golpe: si Android cierra la app a medias, la playlist no se queda vacía
+                    // (y no se subiría vacía a los demás dispositivos en la siguiente sincronización).
+                    val id = db.withTransaction {
+                        val id = local ?: db.playlists().insert(
+                            PlaylistEntity(name = p.name, description = p.description, createdAt = p.createdAt.takeIf { it > 0 } ?: System.currentTimeMillis()),
+                        )
+                        db.playlists().rename(id, p.name, p.description)
+                        db.playlists().setRemote(id, p.remoteId, p.coverUrl)
+                        db.songs().saveAll(p.songs)
+                        db.playlists().clear(id)
+                        db.playlists().addSongs(id, p.songs.map { it.id }.distinct())
+                        db.playlists().setFolder(id, p.folder?.let { ids.folders[it] })
+                        id
+                    }
+                    if (local == null) ids = ids.copy(playlists = ids.playlists + (c.k to id))
                 }
                 SyncTypes.ALBUM -> {
                     if (d == null) {

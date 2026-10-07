@@ -2,6 +2,7 @@ package com.lyra.desktop.data
 
 import com.lyra.desktop.ErrorLog
 import com.lyra.desktop.Paths
+import com.lyra.desktop.writeTextSafely
 import com.lyra.desktop.audio.StreamResolver
 import com.lyra.music.data.download.AudioTags
 import com.lyra.music.data.download.Id3Tagger
@@ -76,7 +77,7 @@ class Downloads(
 
     @Synchronized
     private fun save(entries: Map<String, DownloadEntry>) {
-        runCatching { stateFile.writeText(json.encodeToString(entries)) }
+        runCatching { stateFile.writeTextSafely(json.encodeToString(entries)) }
     }
 
     fun saveNow() = save(state.value)
@@ -121,7 +122,10 @@ class Downloads(
                 runCatching { downloadOne(song) }.onFailure { e ->
                     if (!coroutineContext.isActive) return@onFailure
                     ErrorLog.record("Descargar", "«${song.title}»: ${e.message ?: "error"}", e, extra = song.id)
-                    state.update { it + (song.id to (it[song.id] ?: DownloadEntry(song, DownloadStatus.FAILED)).copy(status = DownloadStatus.FAILED, error = e.message ?: "No se pudo descargar")) }
+                    state.update { entries ->
+                        val entry = entries[song.id] ?: return@update entries
+                        entries + (song.id to entry.copy(status = DownloadStatus.FAILED, error = e.message ?: "No se pudo descargar"))
+                    }
                 }
             }
             running.remove(song.id)
@@ -134,10 +138,16 @@ class Downloads(
         // M4A o MP3: llevan la carátula dentro y se abren en cualquier sitio.
         val stream = resolver.freshStream(song.id, settings.current.downloadQuality, portable = true, hint = song)
         val partial = File(folder, ".lyra-" + song.id.replace(Regex("[^A-Za-z0-9._-]"), "_") + ".part")
-        if (stream.isHls) {
-            HlsFetcher(http).download(stream.url, partial) { p -> setStatus(song, DownloadStatus.DOWNLOADING, p) }
-        } else {
-            fetch(stream.url, stream.contentLength, partial) { p -> setStatus(song, DownloadStatus.DOWNLOADING, p) }
+        try {
+            if (stream.isHls) {
+                HlsFetcher(http).download(stream.url, partial) { p -> setStatus(song, DownloadStatus.DOWNLOADING, p) }
+            } else {
+                fetch(stream.url, stream.contentLength, partial) { p -> setStatus(song, DownloadStatus.DOWNLOADING, p) }
+            }
+        } catch (e: Throwable) {
+            // Cancelada o fallida: que no se quede el trozo a medias en la carpeta de música.
+            partial.delete()
+            throw e
         }
         val extension = when {
             stream.mimeType == "audio/mp4" || stream.extension == "m4a" -> "m4a"
@@ -161,11 +171,22 @@ class Downloads(
             partial.copyTo(target, overwrite = true)
             partial.delete()
         }
-        state.update { it + (song.id to DownloadEntry(song, DownloadStatus.DONE, target.absolutePath, 1f, addedAt = it[song.id]?.addedAt ?: System.currentTimeMillis())) }
+        var kept = false
+        state.update { entries ->
+            val entry = entries[song.id]
+            kept = entry != null
+            if (entry == null) entries else entries + (song.id to DownloadEntry(song, DownloadStatus.DONE, target.absolutePath, 1f, addedAt = entry.addedAt))
+        }
+        // La quitaron justo mientras terminaba: fuera también el archivo.
+        if (!kept) target.delete()
     }
 
+    /** Solo si sigue en la lista (si la quitaron mientras bajaba, no vuelve a aparecer). */
     private fun setStatus(song: Song, status: DownloadStatus, progress: Float) {
-        state.update { it + (song.id to (it[song.id] ?: DownloadEntry(song, status)).copy(status = status, progress = progress, error = null)) }
+        state.update { entries ->
+            val entry = entries[song.id] ?: return@update entries
+            entries + (song.id to entry.copy(status = status, progress = progress, error = null))
+        }
     }
 
     /** Baja por trozos de 4 MB con Range (YouTube frena las descargas de golpe). */

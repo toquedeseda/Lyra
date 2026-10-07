@@ -1,7 +1,10 @@
 package com.lyra.desktop
 
 import com.lyra.desktop.audio.AudioCache
+import com.lyra.desktop.audio.AudioEngine
 import com.lyra.desktop.audio.FfmpegDecoder
+import com.lyra.desktop.audio.FileInput
+import com.lyra.desktop.audio.PlayingTrack
 import com.lyra.desktop.audio.RemoteStream
 import com.lyra.desktop.audio.StreamResolver
 import com.lyra.music.data.model.ArtistRef
@@ -16,8 +19,16 @@ import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Test
+import java.io.ByteArrayInputStream
 import java.io.File
 import java.nio.file.Files
+import java.util.concurrent.CountDownLatch
+import javax.sound.sampled.AudioFileFormat
+import javax.sound.sampled.AudioFormat
+import javax.sound.sampled.AudioInputStream
+import javax.sound.sampled.AudioSystem
+import kotlin.math.PI
+import kotlin.math.sin
 import kotlin.math.sqrt
 
 /** Sonido de verdad: YouTube Music → caché por trozos → FFmpeg (solo con LYRA_LIVE_TESTS=1). */
@@ -69,6 +80,56 @@ class AudioLiveTest {
             assertTrue("suena tras saltar", middle > 0.005)
             assertTrue("posición", decoder.positionFrames in (91_000L * 48)..(91_100L * 48))
         }
+    }
+
+    /** Un tono de [seconds] segundos en WAV (para probar el motor sin internet). */
+    private fun tone(seconds: Int): File {
+        val rate = 48_000f
+        val frames = (rate * seconds).toInt()
+        val bytes = ByteArray(frames * 4)
+        for (i in 0 until frames) {
+            val v = (sin(2 * PI * 440 * i / rate) * 8_000).toInt()
+            for (c in 0..1) {
+                bytes[i * 4 + c * 2] = v.toByte()
+                bytes[i * 4 + c * 2 + 1] = (v shr 8).toByte()
+            }
+        }
+        val file = File(dir, "tono-$seconds.wav")
+        val format = AudioFormat(rate, 16, 2, true, false)
+        AudioSystem.write(AudioInputStream(ByteArrayInputStream(bytes), format, frames.toLong()), AudioFileFormat.Type.WAVE, file)
+        return file
+    }
+
+    private val noEvents = object : AudioEngine.Events {
+        override fun started(track: PlayingTrack) = Unit
+        override fun ended(track: PlayingTrack) = Unit
+        override fun failed(track: PlayingTrack, error: Throwable) = Unit
+    }
+
+    @Test
+    fun `pausar mientras carga no deja escapar sonido`() {
+        val wav = tone(5)
+        val engine = AudioEngine(noEvents).apply { muted = true }
+        val arrived = CountDownLatch(1)
+        // El audio «tarda en llegar» hasta que se abre la puerta.
+        val track = PlayingTrack(1, null, 5_000) {
+            arrived.await()
+            FfmpegDecoder(FileInput(wav))
+        }
+        engine.play(track)
+        Thread.sleep(300)
+        assertTrue("cargando", engine.buffering)
+        engine.pause()
+        Thread.sleep(200)
+        arrived.countDown()
+        Thread.sleep(1_000)
+        assertTrue("pausada", engine.isPaused)
+        assertEquals("no ha sonado nada", 0L, track.positionFrames)
+        // Y al reanudar, suena.
+        engine.resume()
+        Thread.sleep(800)
+        assertTrue("suena al reanudar", track.positionFrames > 0)
+        engine.stop()
     }
 
     @Test

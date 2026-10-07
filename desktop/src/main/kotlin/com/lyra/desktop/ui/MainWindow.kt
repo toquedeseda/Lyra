@@ -1,5 +1,7 @@
 package com.lyra.desktop.ui
 
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -335,6 +337,44 @@ private fun Dialogs() {
     }
     actions.addToPlaylist?.let { songs -> AddToPlaylistDialog(songs) }
     actions.spotifyImport?.let { initial -> SpotifyImportDialog(initial) }
+    WhatsNew()
+}
+
+/** Novedades: la primera vez que se abre una versión nueva, lo que trae (como en el móvil). */
+@Composable
+private fun WhatsNew() {
+    val app = LocalActions.current.app
+    var notes by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) {
+        val seen = app.settings.current.lastSeenVersion
+        val version = com.lyra.desktop.BuildInfo.VERSION
+        if (seen == version) return@LaunchedEffect
+        app.settings.update { it.copy(lastSeenVersion = version) }
+        // Recién instalada no hay «novedades»: solo después de actualizar.
+        if (seen.isNotEmpty()) notes = app.updater.notesFor(version)
+    }
+    val text = notes ?: return
+    OverlayDialog(onDismiss = { notes = null }, width = 520.dp) {
+        Column {
+            Text("Novedades de la ${com.lyra.desktop.BuildInfo.VERSION}", style = MaterialTheme.typography.headlineMedium, color = LyraColors.TextPrimary)
+            Spacer(Modifier.height(14.dp))
+            Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
+                text.lines().filter { it.isNotBlank() }.forEach { line ->
+                    val bullet = line.trimStart().startsWith("- ")
+                    Text(
+                        if (bullet) "•  " + line.trimStart().removePrefix("- ") else line,
+                        style = if (bullet) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.titleSmall,
+                        color = if (bullet) LyraColors.TextSecondary else LyraColors.TextPrimary,
+                        modifier = Modifier.padding(bottom = 10.dp),
+                    )
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                FilledPill("Genial", onClick = { notes = null })
+            }
+        }
+    }
 }
 
 /** «Añadir a una playlist»: tus playlists (y crear una nueva con esas canciones). */

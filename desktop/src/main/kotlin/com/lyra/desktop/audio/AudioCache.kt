@@ -1,5 +1,7 @@
 package com.lyra.desktop.audio
 
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
@@ -80,9 +82,15 @@ class AudioCache(private val dir: File, private val http: OkHttpClient, private 
         return created
     }
 
-    /** Quita una canción de la caché (p. ej. porque su audio no se podía leer). */
-    fun remove(songId: String) {
+    /**
+     * Quita una canción de la caché (p. ej. porque su audio no se podía leer). Si aún se está soltando
+     * (la pista que falló se cierra a la vez), espera un momento: si no, se volvería a usar lo malo.
+     */
+    suspend fun remove(songId: String) {
         val key = keyFor(songId)
+        withTimeoutOrNull(2_000) {
+            while (open.containsKey(key)) delay(20)
+        }
         if (open.containsKey(key)) return
         File(dir, "$key.audio").delete()
         File(dir, "$key.part").delete()

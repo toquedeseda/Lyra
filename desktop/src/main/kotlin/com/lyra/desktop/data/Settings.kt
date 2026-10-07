@@ -84,6 +84,8 @@ data class DesktopSettings(
     val rightPanel: RightPanel = RightPanel.QUEUE,
     val window: WindowBounds? = null,
     val closeToTray: Boolean = false,
+    /** Ya se avisó (una vez) de que, al cerrar, Lyra sigue en la bandeja. */
+    val trayHintShown: Boolean = false,
     val startWithWindows: Boolean = false,
     val miniX: Int? = null,
     val miniY: Int? = null,
@@ -93,6 +95,8 @@ data class DesktopSettings(
     val cacheLimitMb: Int = 1024,
     val checkUpdates: Boolean = true,
     val lastSeenVersion: String = "",
+    /** Ya se cerró la tarjeta del Inicio que invita a sincronizar con el móvil. */
+    val syncHintDismissed: Boolean = false,
     val language: String = "es",
     val region: String = "ES",
     val sync: SyncConfig? = null,

@@ -4,6 +4,7 @@ import com.lyra.desktop.data.Downloads
 import com.lyra.desktop.data.Library
 import com.lyra.desktop.data.LibraryEntry
 import com.lyra.desktop.data.LibrarySort
+import com.lyra.desktop.player.savedRange
 import com.lyra.desktop.update.Updater
 import com.lyra.music.data.model.AlbumItem
 import com.lyra.music.data.model.ArtistItem
@@ -77,6 +78,15 @@ class DesktopLogicTest {
         lib.recordPlay(song(1), 60_000)
         val recent = lib.entries(lib.current, LibrarySort.RECENT).first()
         assertTrue(recent is LibraryEntry.Playlist && recent.playlist.name == "Zeta")
+    }
+
+    @Test
+    fun `en colas enormes se guarda la parte de la que suena`() {
+        assertEquals(0..499, savedRange(size = 500, index = 300))
+        assertEquals(0..999, savedRange(size = 3_000, index = 0))
+        assertEquals(1_400..2_399, savedRange(size = 3_000, index = 1_500))
+        assertEquals(2_000..2_999, savedRange(size = 3_000, index = 2_999))
+        assertTrue(2_999 in savedRange(size = 3_000, index = 2_999))
     }
 
     @Test

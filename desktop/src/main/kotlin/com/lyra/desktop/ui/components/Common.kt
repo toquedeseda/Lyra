@@ -40,6 +40,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -48,6 +49,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -70,6 +72,7 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.lyra.desktop.ui.LyraColors
 import java.io.File
+import java.util.concurrent.atomic.AtomicInteger
 
 // ---------------------------------------------------------------------- portadas
 
@@ -313,6 +316,7 @@ fun SearchBox(
                 modifier = Modifier
                     .fillMaxWidth()
                     .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+                    .then(rememberTypingFocus())
                     .onPreviewKeyEvent { event ->
                         when {
                             event.type == KeyEventType.KeyDown && (event.key == Key.Enter || event.key == Key.NumPadEnter) -> {
@@ -330,6 +334,34 @@ fun SearchBox(
         }
         if (value.isNotEmpty()) {
             IconBtn(Icons.Rounded.Close, "Borrar", onClick = { onValueChange("") }, size = 28.dp, iconSize = 16.dp)
+        }
+    }
+}
+
+/**
+ * Hay un cuadro de texto con el cursor dentro: la barra espaciadora escribe un espacio en vez de
+ * pausar la música (los atajos de la ventana lo miran).
+ */
+object Typing {
+    private val focused = AtomicInteger()
+    val active: Boolean get() = focused.get() > 0
+
+    internal fun changed(gained: Boolean) {
+        if (gained) focused.incrementAndGet() else focused.updateAndGet { (it - 1).coerceAtLeast(0) }
+    }
+}
+
+/** Avisa a [Typing] cuando este cuadro de texto gana o pierde el cursor (y si desaparece con él). */
+@Composable
+private fun rememberTypingFocus(): Modifier {
+    val focused = remember { booleanArrayOf(false) }
+    DisposableEffect(Unit) {
+        onDispose { if (focused[0]) Typing.changed(gained = false) }
+    }
+    return Modifier.onFocusChanged { state ->
+        if (state.isFocused != focused[0]) {
+            focused[0] = state.isFocused
+            Typing.changed(state.isFocused)
         }
     }
 }
@@ -361,6 +393,7 @@ fun LyraTextField(
             modifier = Modifier
                 .fillMaxWidth()
                 .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+                .then(rememberTypingFocus())
                 .onPreviewKeyEvent { event ->
                     if (singleLine && event.type == KeyEventType.KeyDown && (event.key == Key.Enter || event.key == Key.NumPadEnter)) {
                         onSubmit()

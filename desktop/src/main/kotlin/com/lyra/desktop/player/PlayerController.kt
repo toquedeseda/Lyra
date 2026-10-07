@@ -1,6 +1,7 @@
 package com.lyra.desktop.player
 
 import com.lyra.desktop.ErrorLog
+import com.lyra.desktop.writeTextSafely
 import com.lyra.desktop.audio.AudioCache
 import com.lyra.desktop.audio.AudioEngine
 import com.lyra.desktop.audio.AudioFx
@@ -423,6 +424,7 @@ class PlayerController(
     /** Pone a sonar la canción de la posición actual. */
     private fun startCurrent(startMs: Long, autoplay: Boolean) {
         val item = _state.value.current ?: return
+        advanceWhenMore = false
         commitListening()
         listenedUid = item.uid
         listenedMs = 0
@@ -542,6 +544,7 @@ class PlayerController(
             // Audio en un formato que no se lee bien: se pide otra vez en M4A desde donde iba.
             if (error is UnreadableAudioException && localFile(song.id) == null && resolver.preferPortable(song.id)) {
                 cache.remove(song.id)
+                if (_state.value.current?.uid != item.uid) return@launch // mientras, se cambió de canción
                 startCurrent(track.positionFrames * 1000 / FfmpegDecoder.SAMPLE_RATE, autoplay = true)
                 return@launch
             }
@@ -561,9 +564,17 @@ class PlayerController(
             if (s.index + 1 <= s.queue.lastIndex) {
                 _state.update { it.copy(index = it.index + 1, manualCount = (it.manualCount - 1).coerceAtLeast(0)) }
                 startCurrent(0, autoplay = true)
+            } else if (s.repeat == RepeatMode.ALL && s.queue.size > 1) {
+                _state.update { it.copy(index = 0, manualCount = 0) }
+                startCurrent(0, autoplay = true)
             } else {
                 _state.update { it.copy(isPlaying = false) }
                 engine.stop()
+                // Era la última: con la radio infinita, sigue con lo que traiga.
+                if (settings.current.infiniteRadio && s.repeat == RepeatMode.OFF) {
+                    advanceWhenMore = true
+                    maybeExtendRadio()
+                }
             }
         }
     }
@@ -620,9 +631,10 @@ class PlayerController(
         val items = newItems(fresh, radio)
         _state.update { it.copy(queue = it.queue + items) }
         original = original?.let { it + items }
+        // Se acabó la cola (o se pulsó «siguiente» en la última) esperando a la radio: sigue ya.
         if (advanceWhenMore) {
             advanceWhenMore = false
-            if (engine.currentTrack == null && _state.value.index + 1 <= _state.value.queue.lastIndex) {
+            if (_state.value.index + 1 <= _state.value.queue.lastIndex) {
                 _state.update { it.copy(index = it.index + 1) }
                 startCurrent(0, autoplay = true)
                 return@withContext fresh.size
@@ -643,31 +655,44 @@ class PlayerController(
     }
 
     private fun saveQueueNow() {
+        val saved = snapshot() ?: return
+        scope.launch(Dispatchers.IO) { writeQueue(saved) }
+    }
+
+    /**
+     * Lo que se guarda de la cola. Con colas enormes (p. ej. 3000 Me gusta), hasta 1000 canciones
+     * alrededor de la que suena, para que al volver a abrir siga siendo la misma.
+     */
+    private fun snapshot(): SavedQueue? {
         val s = _state.value
-        if (s.queue.isEmpty()) return
-        val saved = SavedQueue(
-            queue = s.queue.takeLast(1_000),
-            index = (s.index - (s.queue.size - minOf(s.queue.size, 1_000))).coerceAtLeast(0),
-            positionMs = if (engine.currentTrack != null) engine.positionMs else _lastPosition,
+        if (s.queue.isEmpty()) return null
+        val range = savedRange(s.queue.size, s.index)
+        val window = s.queue.slice(range)
+        val kept = if (window.size == s.queue.size) null else window.mapTo(HashSet()) { it.uid }
+        return SavedQueue(
+            queue = window,
+            index = (s.index - range.first).coerceIn(0, window.lastIndex),
+            positionMs = positionMs,
             shuffle = s.shuffle,
-            original = original?.takeLast(1_000),
+            original = original?.let { o -> if (kept == null) o else o.filter { it.uid in kept } },
             context = s.context,
             manualCount = s.manualCount,
         )
-        scope.launch(Dispatchers.IO) {
-            runCatching { queueFile.writeText(json.encodeToString(SavedQueue.serializer(), saved)) }
-        }
+    }
+
+    private fun writeQueue(saved: SavedQueue) = synchronized(queueFile) {
+        runCatching { queueFile.writeTextSafely(json.encodeToString(SavedQueue.serializer(), saved)) }
     }
 
     /** Al abrir Lyra: la cola de la última vez, parada donde se quedó. */
     fun restore() = scope.launch(confined) {
         val saved = withContext(Dispatchers.IO) {
             runCatching { json.decodeFromString(SavedQueue.serializer(), queueFile.readText()) }.getOrNull()
-        } ?: run {
+        }
+        if (saved == null || saved.queue.isEmpty()) {
             _state.update { it.copy(shuffle = settings.current.shuffle, repeat = settings.current.repeat) }
             return@launch
         }
-        if (saved.queue.isEmpty()) return@launch
         val maxUid = saved.queue.maxOf { it.uid }
         uids.set(maxUid + 1)
         original = saved.original
@@ -692,15 +717,12 @@ class PlayerController(
     }
 
     private fun saveQueueNowBlocking() {
-        val s = _state.value
-        if (s.queue.isEmpty()) return
-        runCatching {
-            queueFile.writeText(
-                json.encodeToString(
-                    SavedQueue.serializer(),
-                    SavedQueue(s.queue.takeLast(1_000), s.index.coerceAtLeast(0), if (engine.currentTrack != null) engine.positionMs else _lastPosition, s.shuffle, original, s.context, s.manualCount),
-                ),
-            )
-        }
+        snapshot()?.let(::writeQueue)
     }
+}
+
+/** Qué parte de una cola de [size] canciones se guarda: hasta [max] alrededor de [index] (unas pocas de antes). */
+internal fun savedRange(size: Int, index: Int, max: Int = 1_000, before: Int = 100): IntRange {
+    val from = (index - before).coerceIn(0, (size - max).coerceAtLeast(0))
+    return from until minOf(size, from + max)
 }

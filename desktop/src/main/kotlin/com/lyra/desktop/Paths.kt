@@ -3,6 +3,8 @@ package com.lyra.desktop
 import com.sun.jna.platform.win32.KnownFolders
 import com.sun.jna.platform.win32.Shell32Util
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 
 /**
  * Dónde guarda Lyra sus cosas en Windows:
@@ -49,4 +51,11 @@ object Paths {
         // FFmpeg y compañía se copian aquí la primera vez, no en la carpeta del usuario.
         System.setProperty("org.bytedeco.javacpp.cachedir", natives.absolutePath)
     }
+}
+
+/** Escribe en un archivo aparte y luego lo cambia por el bueno: si se corta a medias, el anterior sigue entero. */
+fun File.writeTextSafely(text: String) {
+    val temp = File(path + ".tmp")
+    temp.writeText(text)
+    Files.move(temp.toPath(), toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
 }

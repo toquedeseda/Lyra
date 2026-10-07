@@ -98,8 +98,9 @@ fun SearchScreen(query: String, initialTab: Int) {
     var page by remember(text, tab) { mutableStateOf<SearchPage?>(null) }
     var error by remember(text, tab) { mutableStateOf<String?>(null) }
     var loadingMore by remember(text, tab) { mutableStateOf(false) }
+    var retry by remember(text, tab) { mutableStateOf(0) }
     val searchTab = SearchTab.entries[tab]
-    LaunchedEffect(text, tab) {
+    LaunchedEffect(text, tab, retry) {
         delay(280)
         val cacheKey = "search:$tab:$text"
         PageCache.get<SearchPage>(cacheKey)?.let { page = it; return@LaunchedEffect }
@@ -140,7 +141,12 @@ fun SearchScreen(query: String, initialTab: Int) {
         }
         val result = page
         when {
-            error != null && result == null -> item { ErrorView(error) { error = null; tab = tab } }
+            error != null && result == null -> item {
+                ErrorView(error) {
+                    error = null
+                    retry++
+                }
+            }
             result == null -> item { LoadingView() }
             result.items.isEmpty() && result.topResult == null -> item {
                 MessageView(Icons.Rounded.SearchOff, "Nada con «$text»", "Prueba con otras palabras o en la pestaña SoundCloud.")
