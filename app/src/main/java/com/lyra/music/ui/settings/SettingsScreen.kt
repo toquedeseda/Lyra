@@ -115,23 +115,28 @@ fun SettingsScreen(contentPadding: PaddingValues) {
         LazyColumn(contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding() + 24.dp)) {
             item { Group("Reproducción") }
             item { NavRow("Calidad de streaming", qualityLabel(s.streamQuality)) { qualityDialog = "stream" } }
+            // Como en Spotify: un interruptor y, si está activado, los segundos del fundido.
             item {
-                SliderRow(
-                    title = "Crossfade",
-                    valueLabel = if (s.crossfadeSeconds == 0) "Desactivado" else "${s.crossfadeSeconds} s",
-                    value = s.crossfadeSeconds.toFloat(),
-                    range = 0f..12f,
-                    steps = 11,
-                    description = "La siguiente canción entra mientras termina la anterior.",
-                ) { value -> update { it.copy(crossfadeSeconds = value.toInt()) } }
+                SwitchRow(
+                    "Fundido entre canciones",
+                    "El final de cada canción se funde con el principio de la siguiente, como en Spotify.",
+                    s.crossfadeSeconds > 0,
+                ) { on ->
+                    update {
+                        if (on) it.copy(crossfadeSeconds = it.crossfadeLast.coerceIn(1, 12))
+                        else it.copy(crossfadeLast = it.crossfadeSeconds.takeIf { v -> v > 0 } ?: it.crossfadeLast, crossfadeSeconds = 0)
+                    }
+                }
             }
             if (s.crossfadeSeconds > 0) {
                 item {
-                    SwitchRow(
-                        "Crossfade inteligente",
-                        "No mezcla pistas seguidas de un mismo álbum, y la siguiente entra cuando la canción acaba de verdad (en su fundido o silencio final).",
-                        s.smartCrossfade,
-                    ) { v -> update { it.copy(smartCrossfade = v) } }
+                    SliderRow(
+                        title = "Duración del fundido",
+                        valueLabel = "${s.crossfadeSeconds} s",
+                        value = s.crossfadeSeconds.toFloat(),
+                        range = 1f..12f,
+                        steps = 10,
+                    ) { value -> update { it.copy(crossfadeSeconds = value.toInt().coerceIn(1, 12)) } }
                 }
             }
             item { SwitchRow("Igualar volumen", "Todas las canciones suenan a un volumen parecido.", s.normalizeVolume) { v -> update { it.copy(normalizeVolume = v) } } }
@@ -223,6 +228,8 @@ fun SettingsScreen(contentPadding: PaddingValues) {
                 }
             }
 
+            item { Group("Lyra para Windows") }
+            item { SyncRow() }
             item { Group("Copia de seguridad") }
             item { SwitchRow("Incluir canciones descargadas", "El archivo ocupará bastante más.", includeDownloads) { includeDownloads = it } }
             item {

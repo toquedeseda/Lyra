@@ -8,3 +8,10 @@ Lyra no está en Google Play, así que el móvil puede decir que es una app «da
    - Si no aparece esa opción: abre **Google Play** → tu foto (arriba a la derecha) → **Play Protect** → ⚙️ → desactiva **Analizar apps con Play Protect**. Instala Lyra y vuelve a activarlo. Si más adelante avisa de Lyra, elige **Ignorar** o **Mantener app**.
 4. En **Xiaomi, Vivo, Oppo, Realme o Huawei** puede salir además el aviso de seguridad del propio móvil: pulsa **Instalar igualmente** o **Continuar** (a veces hay que esperar unos segundos o poner la contraseña de la cuenta).
 5. Las siguientes versiones se instalan desde la propia app (Ajustes → Buscar actualizaciones): no hace falta repetir esto.
+
+### En el ordenador (Windows 10 y 11)
+
+1. **Descarga** `Lyra-v…-Windows.msi` (abajo, en *Assets*). Si el navegador dice que «no se descarga habitualmente», pulsa **⋯** → **Conservar** (en Chrome, **Descargar de todos modos**).
+2. **Ábrelo.** Si sale **«Windows protegió su PC»**, pulsa **Más información** → **Ejecutar de todas formas**. Sale porque Lyra no lleva una firma de pago, no porque haga nada malo.
+3. Se instala sola en unos segundos, **sin pedir permisos de administrador**, y queda en el menú Inicio y en el escritorio. Las versiones nuevas se ponen solas.
+4. **Tu biblioteca en el móvil y en el PC:** en el móvil, *Ajustes → Biblioteca sincronizada → Activar*; en el PC, *Ajustes* → escribe el código que te da.

@@ -7,9 +7,9 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
-// La versiÃ³n la cambia el script release.ps1: no tocar el formato de estas dos lÃ­neas.
-val lyraVersionCode = 12
-val lyraVersionName = "1.9.1"
+// La versión la cambia el script release.ps1: no tocar el formato de estas dos líneas.
+val lyraVersionCode = 13
+val lyraVersionName = "1.10.0"
 
 // Datos de firma de las releases (fuera del repositorio, ver README).
 val keystoreProps = Properties().apply {
@@ -28,7 +28,7 @@ android {
         versionCode = lyraVersionCode
         versionName = lyraVersionName
 
-        // Repositorio de GitHub donde se publican las versiones (autoactualizaciÃ³n).
+        // Repositorio de GitHub donde se publican las versiones (autoactualización).
         buildConfigField("String", "UPDATE_REPO", "\"toquedeseda/Lyra\"")
     }
 
@@ -110,6 +110,7 @@ ksp {
 
 dependencies {
     coreLibraryDesugaring(libs.desugar)
+    implementation(project(":core"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)

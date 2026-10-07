@@ -1,6 +1,6 @@
 # Lyra
 
-App de música personal para Android, estilo Spotify en negro, gris y blanco. Busca, reproduce y descarga música de **YouTube Music** y **SoundCloud**, y se actualiza sola desde las releases de este repositorio.
+App de música personal para **Android y Windows**, estilo Spotify en negro, gris y blanco. Busca, reproduce y descarga música de **YouTube Music** y **SoundCloud**, se actualiza sola desde las releases de este repositorio y **sincroniza tu biblioteca** entre el móvil y el PC.
 
 **Web:** https://lyra.shopxcenter.duckdns.org (descarga con el aviso de cómo instalarla)
 
@@ -18,6 +18,22 @@ Lyra no está en Google Play, así que el móvil puede decir que es una app «da
 5. Las siguientes versiones se instalan desde la propia app (Ajustes → Buscar actualizaciones): no hace falta repetir esto.
 
 **[⬇️ Descargar la última versión](https://github.com/toquedeseda/Lyra/releases/latest)**
+
+### En el ordenador (Windows 10 y 11)
+
+1. **Descarga** `Lyra-v…-Windows.msi` (abajo, en *Assets*). Si el navegador dice que «no se descarga habitualmente», pulsa **⋯** → **Conservar** (en Chrome, **Descargar de todos modos**).
+2. **Ábrelo.** Si sale **«Windows protegió su PC»**, pulsa **Más información** → **Ejecutar de todas formas**. Sale porque Lyra no lleva una firma de pago, no porque haga nada malo.
+3. Se instala sola en unos segundos, **sin pedir permisos de administrador**, y queda en el menú Inicio y en el escritorio. Las versiones nuevas se ponen solas.
+4. **Tu biblioteca en el móvil y en el PC:** en el móvil, *Ajustes → Biblioteca sincronizada → Activar*; en el PC, *Ajustes* → escribe el código que te da.
+
+## Lyra para Windows
+
+La misma música en el ordenador, en una ventana como la de Spotify: barra lateral con tu biblioteca, Inicio, Buscar, álbumes, artistas y playlists, cola y letra sincronizada a la derecha, y el reproductor abajo.
+
+- **Biblioteca sincronizada** con el móvil: Me gusta, playlists, carpetas, álbumes y artistas (se emparejan con un código de 6 letras; va por el servidor de la web).
+- **Teclas multimedia** del teclado y la tarjeta de Windows al cambiar el volumen (con la carátula), **mini reproductor** siempre encima y bandeja del sistema.
+- **Descargas** en `Música\Lyra` («Artista - Canción.m4a» con carátula), fundido entre canciones como en Spotify, volumen igualado y ecualizador de 10 bandas.
+- Se instala sin permisos de administrador y **se actualiza sola** (`Lyra-v…-Windows.msi` de cada release).
 
 ## Funciones
 
@@ -48,6 +64,14 @@ Android Studio (JDK 21, SDK 37) o desde consola:
 .\gradlew.bat :app:assembleDebug      # APK de pruebas (com.lyra.music.debug, convive con la release)
 .\gradlew.bat :app:testDebugUnitTest  # tests (parser, audio, letras, versiones)
 $env:LYRA_LIVE_TESTS="1"; .\gradlew.bat :app:testDebugUnitTest   # también contra YouTube y SoundCloud reales
+```
+
+Lyra para Windows (`desktop/`, Compose Desktop) y lo común a las dos (`core/`):
+
+```powershell
+.\gradlew.bat :desktop:run                 # abrirla desde el código (datos de prueba en %APPDATA%\Lyra-dev)
+.\gradlew.bat :core:test :desktop:test     # pruebas (sincronización, audio…)
+.\gradlew.bat :desktop:packageReleaseMsi   # el instalador .msi
 ```
 
 ## Publicar una versión

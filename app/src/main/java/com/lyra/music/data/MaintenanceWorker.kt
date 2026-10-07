@@ -36,6 +36,8 @@ class MaintenanceWorker(context: Context, params: WorkerParameters) : CoroutineW
     override suspend fun doWork(): Result {
         val settings = container.settings.loaded()
         val now = System.currentTimeMillis()
+        // La biblioteca sincronizada con el PC se pone al día aunque no abras la app.
+        if (container.sync.paired) runCatching { container.sync.syncNow() }
         // Una vez al mes como mucho: descargas que llevas meses sin escuchar.
         if (settings.staleDownloadMonths > 0 && now - prefs.getLong("cleanup_at", 0) > 30 * 86_400_000L) {
             val stale = runCatching { container.downloads.staleNow(settings.staleDownloadMonths) }.getOrDefault(emptyList())

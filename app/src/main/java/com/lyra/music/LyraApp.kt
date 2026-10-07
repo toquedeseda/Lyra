@@ -95,6 +95,9 @@ class AppContainer(val app: Application) {
     val releases by lazy { com.lyra.music.data.repo.ReleasesRepository(app, music, library) }
     val playlistSync by lazy { com.lyra.music.data.repo.PlaylistSync(database, music, library, downloads, spotifyImport) }
 
+    /** Biblioteca sincronizada con Lyra para Windows (por el servidor de la web). */
+    val sync by lazy { com.lyra.music.sync.AndroidSyncManager(app, http, database, library, downloads, settings, { backup }, scope) }
+
     // Canal con búfer: si el evento llega antes de que la interfaz escuche
     // (p. ej. al abrir la app desde la notificación), se guarda hasta entonces.
     private val _events = Channel<AppEvent>(Channel.BUFFERED)
@@ -137,13 +140,20 @@ class LyraApp : Application(), SingletonImageLoader.Factory {
         // WorkManager tarda en prepararse: se hace fuera del hilo de la pantalla.
         container.scope.launch(kotlinx.coroutines.Dispatchers.Default) {
             com.lyra.music.data.MaintenanceWorker.schedule(this@LyraApp)
+            // La biblioteca sincronizada con el PC (si está activada) se pone al día al abrir.
+            container.sync.start()
         }
 
         // La isla no se muestra mientras Lyra está en pantalla.
         ProcessLifecycleOwner.get().lifecycle.addObserver(
             LifecycleEventObserver { _, event ->
                 when (event) {
-                    Lifecycle.Event.ON_START -> container.island.setAppVisible(true)
+                    Lifecycle.Event.ON_START -> {
+                        container.island.setAppVisible(true)
+                        container.scope.launch(kotlinx.coroutines.Dispatchers.Default) {
+                            if (container.sync.paired) container.sync.syncNow()
+                        }
+                    }
                     Lifecycle.Event.ON_STOP -> container.island.setAppVisible(false)
                     else -> Unit
                 }

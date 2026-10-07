@@ -162,9 +162,10 @@ fun ArtistScreen(id: String, contentPadding: PaddingValues) {
                                     Text(if (following) "Siguiendo" else "Seguir", style = MaterialTheme.typography.labelLarge)
                                 }
                                 Spacer(Modifier.width(10.dp))
-                                if (page.radioPlaylistId != null) {
+                                val radioPlaylistId = page.radioPlaylistId
+                                if (radioPlaylistId != null) {
                                     OutlineIconButton(Icons.Outlined.Radio, "Radio del artista", onClick = {
-                                        actions.container.player.startPlaylistRadio(page.radioPlaylistId, "Radio de ${artist.title}")
+                                        actions.container.player.startPlaylistRadio(radioPlaylistId, "Radio de ${artist.title}")
                                     })
                                 }
                                 Spacer(Modifier.weight(1f))
@@ -182,9 +183,10 @@ fun ArtistScreen(id: String, contentPadding: PaddingValues) {
                                 SongRow(song, onClick = { actions.play(page.topSongs, index, from = artist) }, index = index + 1)
                             }
                             item {
+                                val topSongsMore = page.topSongsMore
                                 when {
-                                    page.topSongsMore != null -> TextButton(
-                                        onClick = { actions.nav.navigate(PlaylistRoute("yt:" + page.topSongsMore.browseId)) },
+                                    topSongsMore != null -> TextButton(
+                                        onClick = { actions.nav.navigate(PlaylistRoute("yt:" + topSongsMore.browseId)) },
                                         modifier = Modifier.padding(horizontal = 10.dp),
                                     ) { Text("Ver todas las canciones", color = LyraColors.TextSecondary, style = MaterialTheme.typography.labelLarge) }
                                     page.topSongs.size > 5 -> TextButton(

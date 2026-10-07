@@ -1,6 +1,5 @@
 package com.lyra.music.data.share
 
-import android.net.Uri
 import com.lyra.music.data.model.ArtistRef
 import com.lyra.music.data.model.Song
 import com.lyra.music.data.model.Source
@@ -14,6 +13,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import java.net.URI
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.util.Base64
@@ -60,9 +60,9 @@ class PlaylistSharing(private val http: OkHttpClient) {
 
     /** La playlist de un enlace (corto o largo). */
     suspend fun load(url: String): SharedPlaylist {
-        val uri = Uri.parse(url)
-        uri.fragment?.takeIf { it.isNotBlank() }?.let { return decode(it) }
-        val code = uri.pathSegments.getOrNull(1) ?: throw IOException("El enlace no lleva ninguna playlist")
+        val uri = runCatching { URI(url.trim()) }.getOrElse { throw IOException("El enlace no es válido") }
+        uri.rawFragment?.takeIf { it.isNotBlank() }?.let { return decode(it) }
+        val code = pathSegments(uri).getOrNull(1) ?: throw IOException("El enlace no lleva ninguna playlist")
         if (!CODE.matches(code)) throw IOException("El enlace no es válido")
         return withContext(Dispatchers.IO) {
             val request = Request.Builder().url("$BASE/api/listas/$code").header("X-Lyra", "1").build()
@@ -102,9 +102,11 @@ class PlaylistSharing(private val http: OkHttpClient) {
         private val codec = Json { ignoreUnknownKeys = true }
 
         fun isPlaylistLink(url: String): Boolean {
-            val uri = runCatching { Uri.parse(url) }.getOrNull() ?: return false
-            return uri.host.equals(HOST, ignoreCase = true) && uri.pathSegments.firstOrNull() == "p"
+            val uri = runCatching { URI(url.trim()) }.getOrNull() ?: return false
+            return uri.host.equals(HOST, ignoreCase = true) && pathSegments(uri).firstOrNull() == "p"
         }
+
+        private fun pathSegments(uri: URI): List<String> = uri.path.orEmpty().split('/').filter { it.isNotEmpty() }
 
         fun shareable(name: String, songs: List<Song>) = SharedPlaylist(
             name = name.trim().take(MAX_TEXT).ifBlank { "Playlist" },

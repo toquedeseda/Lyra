@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Publica una versión nueva de Lyra en GitHub. El móvil la detecta sola al abrir la app.
 
@@ -61,8 +61,9 @@ Write-Host "Versión $current -> $Version (código $newCode)" -ForegroundColor C
 
 # --- 2. Tests y compilación ----------------------------------------------------
 try {
-    # Las dos versiones: la completa (isla junto a la cámara) y la de amigos (sin ese permiso).
-    Invoke-Tool "$root\gradlew.bat" @(":app:testCompletaDebugUnitTest", ":app:assembleCompletaRelease", ":app:assembleAmigosRelease", "--console=plain")
+    # Las dos versiones del móvil (la completa, con la isla junto a la cámara, y la de amigos, sin
+    # ese permiso) y el instalador de Windows, con las pruebas de las tres partes.
+    Invoke-Tool "$root\gradlew.bat" @(":core:test", ":app:testCompletaDebugUnitTest", ":desktop:test", ":app:assembleCompletaRelease", ":app:assembleAmigosRelease", ":desktop:packageReleaseMsi", "--console=plain")
 } catch {
     # Si algo falla, la versión vuelve a como estaba.
     [IO.File]::WriteAllText($gradleFile, $originalGradle, (New-Object System.Text.UTF8Encoding $false))
@@ -74,7 +75,9 @@ $apk = "$root\dist\Lyra-v$Version.apk"
 $apkFriends = "$root\dist\Lyra-v${Version}_amigos.apk"
 Copy-Item "$root\app\build\outputs\apk\completa\release\app-completa-release.apk" $apk -Force
 Copy-Item "$root\app\build\outputs\apk\amigos\release\app-amigos-release.apk" $apkFriends -Force
-Write-Host "APK: $apk y $apkFriends" -ForegroundColor Cyan
+$msi = "$root\dist\Lyra-v$Version-Windows.msi"
+Copy-Item "$root\desktop\build\compose\binaries\main-release\msi\Lyra-$Version.msi" $msi -Force
+Write-Host "APK: $apk y $apkFriends · Windows: $msi" -ForegroundColor Cyan
 
 # --- 3. Notas -------------------------------------------------------------------
 $notesPath = "$root\dist\notas-v$Version.md"
@@ -106,5 +109,7 @@ Invoke-Tool "git" @("push", "-q", "origin", "HEAD", "--tags")
 # se actualizan con el primer .apk de la release, y ese tiene que ser el de la completa.
 Invoke-Tool "gh" @("release", "create", "v$Version", $apk, "--title", "Lyra $Version", "--notes-file", $notesPath)
 Invoke-Tool "gh" @("release", "upload", "v$Version", $apkFriends)
+# Lyra para Windows (la app de escritorio busca el archivo que acaba en -Windows.msi).
+Invoke-Tool "gh" @("release", "upload", "v$Version", $msi)
 
-Write-Host "Publicada Lyra $Version. El móvil la verá al abrir la app (o en Ajustes -> Buscar actualizaciones)." -ForegroundColor Green
+Write-Host "Publicada Lyra $Version. El móvil y el PC la verán al abrir la app (o en Ajustes -> Buscar actualizaciones)." -ForegroundColor Green

@@ -204,6 +204,10 @@ interface PlaylistDao {
     @Query("UPDATE playlists SET folderId = :folderId WHERE id = :id")
     suspend fun setFolder(id: Long, folderId: Long?)
 
+    /** De dónde viene (YouTube Music, Spotify…) y su carátula: lo usa la sincronización con el PC. */
+    @Query("UPDATE playlists SET remoteId = :remoteId, coverUrl = :coverUrl WHERE id = :id")
+    suspend fun setRemote(id: Long, remoteId: String?, coverUrl: String?)
+
     @Query("UPDATE playlists SET customCover = :cover WHERE id = :id")
     suspend fun setCustomCover(id: Long, cover: String?)
 

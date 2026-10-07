@@ -270,7 +270,9 @@ class PlaybackService : MediaLibraryService() {
             container.settings.flow.collect { settings ->
                 processor.config = settings.toFxConfig()
                 crossfade.durationMs = settings.crossfadeSeconds * 1000L
-                crossfade.smart = settings.smartCrossfade
+                // Como en Spotify: los últimos segundos de cada canción se mezclan siempre con la
+                // siguiente (sin esperar al final "de verdad" ni saltarse las de un mismo álbum).
+                crossfade.smart = false
                 smartShuffle.enabled = settings.smartShuffle
                 player.skipSilenceEnabled = settings.skipSilence
             }

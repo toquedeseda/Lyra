@@ -28,6 +28,8 @@ data class AppSettings(
     // Audio
     val streamQuality: AudioQuality = AudioQuality.HIGH,
     val crossfadeSeconds: Int = 6,
+    /** Los segundos elegidos la última vez (al volver a activar el fundido). */
+    val crossfadeLast: Int = 6,
     /** Sin mezcla entre pistas seguidas de un álbum y mezcla cuando la canción acaba de verdad. */
     val smartCrossfade: Boolean = true,
     /** Aleatorio inteligente: en aleatorio se cuelan canciones recomendadas. */
@@ -113,6 +115,7 @@ class SettingsRepository(context: Context, scope: CoroutineScope) {
         loaded = true,
         streamQuality = enumOr(p[K.streamQuality], AudioQuality.HIGH),
         crossfadeSeconds = p[K.crossfade] ?: 6,
+        crossfadeLast = p[K.crossfadeLast] ?: 6,
         smartCrossfade = p[K.smartCrossfade] ?: true,
         smartShuffle = p[K.smartShuffle] ?: false,
         normalizeVolume = p[K.normalize] ?: true,
@@ -153,6 +156,7 @@ class SettingsRepository(context: Context, scope: CoroutineScope) {
     private fun write(p: MutablePreferences, s: AppSettings) {
         p[K.streamQuality] = s.streamQuality.name
         p[K.crossfade] = s.crossfadeSeconds
+        p[K.crossfadeLast] = s.crossfadeLast
         p[K.smartCrossfade] = s.smartCrossfade
         p[K.smartShuffle] = s.smartShuffle
         p[K.normalize] = s.normalizeVolume
@@ -199,6 +203,7 @@ class SettingsRepository(context: Context, scope: CoroutineScope) {
             val restored = current.copy(
                 streamQuality = enumOr(values["streamQuality"], current.streamQuality),
                 crossfadeSeconds = values["crossfade"]?.toIntOrNull() ?: current.crossfadeSeconds,
+                crossfadeLast = values["crossfadeLast"]?.toIntOrNull() ?: current.crossfadeLast,
                 smartCrossfade = values["smartCrossfade"]?.toBooleanStrictOrNull() ?: current.smartCrossfade,
                 smartShuffle = values["smartShuffle"]?.toBooleanStrictOrNull() ?: current.smartShuffle,
                 normalizeVolume = values["normalize"]?.toBooleanStrictOrNull() ?: current.normalizeVolume,
@@ -237,6 +242,7 @@ class SettingsRepository(context: Context, scope: CoroutineScope) {
         val streamQuality = stringPreferencesKey("streamQuality")
         val crossfade = intPreferencesKey("crossfade")
         val smartCrossfade = booleanPreferencesKey("smartCrossfade")
+        val crossfadeLast = intPreferencesKey("crossfadeLast")
         val smartShuffle = booleanPreferencesKey("smartShuffle")
         val normalize = booleanPreferencesKey("normalize")
         val skipSilence = booleanPreferencesKey("skipSilence")

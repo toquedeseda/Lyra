@@ -18,3 +18,7 @@ dependencyResolutionManagement {
 
 rootProject.name = "Lyra"
 include(":app")
+// Lo común al móvil y al PC: YouTube Music, SoundCloud, letras, modelos…
+include(":core")
+// Lyra para Windows (Compose Desktop).
+include(":desktop")
