@@ -8,8 +8,8 @@ plugins {
 }
 
 // La versión la cambia el script release.ps1: no tocar el formato de estas dos líneas.
-val lyraVersionCode = 16
-val lyraVersionName = "1.11.0"
+val lyraVersionCode = 17
+val lyraVersionName = "1.11.1"
 
 // Datos de firma de las releases (fuera del repositorio, ver README).
 val keystoreProps = Properties().apply {

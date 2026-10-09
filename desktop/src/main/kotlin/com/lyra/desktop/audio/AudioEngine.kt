@@ -24,6 +24,8 @@ class PlayingTrack(
     val tag: Any?,
     knownDurationMs: Long?,
     startMs: Long = 0,
+    /** El volumen igualado de esta canción (con lo ya medido de ella, si se sabe). */
+    val normalizer: LoudnessNormalizer = LoudnessNormalizer(RATE),
     private val opener: () -> FfmpegDecoder,
 ) {
     private val lock = ReentrantLock()
@@ -49,8 +51,6 @@ class PlayingTrack(
     /** Fotogramas ya entregados a la salida (la posición en la canción). */
     @Volatile var positionFrames: Long = startMs.coerceAtLeast(0) * RATE / 1000
         private set
-
-    val normalizer = LoudnessNormalizer(RATE)
 
     fun startDecoding() {
         lock.withLock {

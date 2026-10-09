@@ -8,6 +8,7 @@ import com.lyra.desktop.audio.AudioFx
 import com.lyra.desktop.audio.AudioInput
 import com.lyra.desktop.audio.FfmpegDecoder
 import com.lyra.desktop.audio.FileInput
+import com.lyra.desktop.audio.LoudnessNormalizer
 import com.lyra.desktop.audio.PlayingTrack
 import com.lyra.desktop.audio.RemoteStream
 import com.lyra.desktop.audio.StreamResolver
@@ -20,6 +21,7 @@ import com.lyra.music.data.model.MusicItem
 import com.lyra.music.data.model.Song
 import com.lyra.music.data.repo.MusicRepository
 import com.lyra.music.data.repo.SongMatcher
+import com.lyra.music.playback.LoudnessMemory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -88,6 +90,8 @@ class PlayerController(
     private val cache: AudioCache,
     private val localFile: (String) -> File?,
     private val queueFile: File,
+    /** Lo fuerte que suena cada canción ya escuchada (para igualar el volumen desde el principio). */
+    private val loudness: LoudnessMemory? = null,
 ) : AudioEngine.Events {
 
     private val confined = Dispatchers.Default.limitedParallelism(1)
@@ -115,6 +119,9 @@ class PlayerController(
 
     /** La cola se acabó esperando a la radio: en cuanto lleguen canciones, sigue sola. */
     private var advanceWhenMore = false
+
+    /** La ganancia del volumen igualado con la que acabó la última canción (la siguiente parte de ahí). */
+    @Volatile private var lastGainDb = 0f
 
     init {
         scope.launch(confined) {
@@ -425,6 +432,7 @@ class PlayerController(
     private fun startCurrent(startMs: Long, autoplay: Boolean) {
         val item = _state.value.current ?: return
         advanceWhenMore = false
+        rememberLoudness(engine.currentTrack)
         commitListening()
         listenedUid = item.uid
         listenedMs = 0
@@ -435,8 +443,27 @@ class PlayerController(
         afterQueueChange()
     }
 
-    private fun trackFor(item: QueueItem, startMs: Long = 0): PlayingTrack =
-        PlayingTrack(trackIds.getAndIncrement(), item, item.song.durationMs, startMs) { openDecoder(item.song) }
+    private fun trackFor(item: QueueItem, startMs: Long = 0): PlayingTrack {
+        // Si ya se escuchó, se sabe lo fuerte que suena; si no, se empieza con la ganancia de la anterior.
+        val normalizer = LoudnessNormalizer(
+            FfmpegDecoder.SAMPLE_RATE,
+            knownDb = loudness?.get(item.song.id) ?: Float.NaN,
+            startGainDb = engine.currentTrack?.normalizer?.gainDb ?: lastGainDb,
+        )
+        return PlayingTrack(trackIds.getAndIncrement(), item, item.song.durationMs, startMs, normalizer) { openDecoder(item.song) }
+    }
+
+    /** Apunta lo fuerte que sonó [track] (si se escuchó lo bastante) para la próxima vez. */
+    private fun rememberLoudness(track: PlayingTrack?) {
+        val item = track?.tag as? QueueItem ?: return
+        val normalizer = track.normalizer
+        lastGainDb = normalizer.gainDb
+        val memory = loudness ?: return
+        val seconds = item.song.durationMs?.let { it / 1000f }
+        if (memory.remember(item.song.id, normalizer.measuredDb, normalizer.measuredSeconds, seconds)) {
+            scope.launch(Dispatchers.IO) { memory.save() }
+        }
+    }
 
     /** Descargada → caché → YouTube/SoundCloud (bajándose a la caché mientras suena). */
     private fun openDecoder(song: Song): FfmpegDecoder {
@@ -511,6 +538,7 @@ class PlayerController(
 
     override fun ended(track: PlayingTrack) {
         scope.launch(confined) {
+            rememberLoudness(track)
             if (engine.currentTrack != null) return@launch // ya suena la siguiente
             commitListening()
             val s = _state.value
@@ -714,6 +742,8 @@ class PlayerController(
 
     fun shutdown() {
         commitListening()
+        rememberLoudness(engine.currentTrack)
+        loudness?.save()
         saveQueueNowBlocking()
         engine.stop()
     }

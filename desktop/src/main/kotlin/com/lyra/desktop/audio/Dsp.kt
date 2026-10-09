@@ -135,9 +135,15 @@ class Equalizer(private val sampleRate: Int) {
  * Volumen igualado de una canción: mide su sonoridad media (sin contar silencios) y acerca la
  * ganancia a un objetivo poco a poco, para que no "bombee". Igual que en el móvil.
  */
-class LoudnessNormalizer(private val sampleRate: Int) {
+class LoudnessNormalizer(
+    private val sampleRate: Int,
+    /** Sonoridad ya medida otra vez de esta canción (NaN: es la primera vez). */
+    private val knownDb: Float = Float.NaN,
+    /** Por dónde empieza la ganancia (la de la canción anterior, mejor que sin igualar). */
+    startGainDb: Float = 0f,
+) {
     private val blockSize = sampleRate / 10
-    private var gainLinear = 1f
+    private var gainLinear = Dsp.dbToLinear(startGainDb)
     private var gainStep = 0f
     private var energySum = 0.0
     private var energyBlocks = 0
@@ -147,6 +153,16 @@ class LoudnessNormalizer(private val sampleRate: Int) {
 
     /** Sonoridad media de la canción hasta ahora (dB), o NaN si aún no se sabe. */
     @Volatile var trackDb: Float = Float.NaN
+        private set
+
+    /** La ganancia que se aplica ahora (dB): la siguiente canción empieza desde aquí. */
+    @Volatile var gainDb: Float = startGainDb
+        private set
+
+    /** Lo medido (para recordarlo): sonoridad media (dB) y segundos con sonido. */
+    @Volatile var measuredDb: Float = Float.NaN
+        private set
+    @Volatile var measuredSeconds: Float = 0f
         private set
 
     fun process(buffer: FloatArray, offset: Int, frames: Int, enabled: Boolean) {
@@ -176,18 +192,24 @@ class LoudnessNormalizer(private val sampleRate: Int) {
             energySum += meanSquare
             energyBlocks++
         }
-        if (energyBlocks >= 20) trackDb = (10 * log10(energySum / energyBlocks + 1e-12)).toFloat()
-        val gainDb = Dsp.linearToDb(gainLinear)
-        val target = if (enabled && energyBlocks >= 5) {
-            (TARGET_DB - 10 * log10(energySum / energyBlocks + 1e-12)).toFloat().coerceIn(MAX_CUT_DB, MAX_BOOST_DB)
-        } else if (enabled) {
-            gainDb
-        } else {
-            0f
-        }
+        val integratedDb = if (energyBlocks > 0) (10 * log10(energySum / energyBlocks + 1e-12)).toFloat() else Float.NaN
+        if (energyBlocks >= 20) trackDb = integratedDb
+        measuredDb = integratedDb
+        measuredSeconds = energyBlocks.toFloat() * blockSize / sampleRate
+        val current = Dsp.linearToDb(gainLinear)
+        gainDb = current
         val seconds = trackFrames.toFloat() / sampleRate
-        val maxStepDb = (if (!enabled || seconds < 8f) FAST_SLEW_DB else SLOW_SLEW_DB) * blockSize / sampleRate
-        return gainDb + (target - gainDb).coerceIn(-maxStepDb, maxStepDb)
+        // Lo ya conocido manda, salvo que lo medido ahora se aleje claramente (otra versión de la canción).
+        val known = knownDb.takeIf { !it.isNaN() && (energyBlocks < 300 || kotlin.math.abs(it - integratedDb) < 3f) }
+        val (target, slewDb) = when {
+            !enabled -> 0f to FAST_SLEW_DB
+            known != null -> (TARGET_DB - known).toFloat().coerceIn(MAX_CUT_DB, MAX_BOOST_DB) to KNOWN_SLEW_DB
+            energyBlocks >= 5 -> (TARGET_DB - integratedDb).toFloat().coerceIn(MAX_CUT_DB, MAX_BOOST_DB) to
+                (if (seconds < 8f) FAST_SLEW_DB else SLOW_SLEW_DB)
+            else -> current to FAST_SLEW_DB
+        }
+        val maxStepDb = slewDb * blockSize / sampleRate
+        return current + (target - current).coerceIn(-maxStepDb, maxStepDb)
     }
 
     /** Tras saltar a otro punto: se sigue con lo medido, sin cambios bruscos. */
@@ -203,6 +225,9 @@ class LoudnessNormalizer(private val sampleRate: Int) {
         const val MAX_CUT_DB = -12f
         const val FAST_SLEW_DB = 4f
         const val SLOW_SLEW_DB = 0.6f
+
+        /** Con la sonoridad ya conocida se llega enseguida (en unas décimas) y luego no se mueve. */
+        const val KNOWN_SLEW_DB = 30f
     }
 }
 

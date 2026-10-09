@@ -105,6 +105,14 @@ class PlaybackService : MediaLibraryService() {
     private var widgetJob: kotlinx.coroutines.Job? = null
     private var contextLabel: String? = null
     private var contextId: String? = null
+
+    /** Lo fuerte que suena cada canción ya escuchada (se carga aparte para no frenar el arranque). */
+    @Volatile private var loudnessMemory: LoudnessMemory? = null
+    private var loudnessSongId: String? = null
+    private var loudnessDurationMs: Long? = null
+
+    /** El procesador del reproductor auxiliar del crossfade (sigue con la ganancia del principal). */
+    private var tailProcessor: LyraAudioProcessor? = null
     private val shuffleState = kotlinx.coroutines.flow.MutableStateFlow(false)
     private val repeatState = kotlinx.coroutines.flow.MutableStateFlow(Player.REPEAT_MODE_OFF)
 
@@ -136,14 +144,25 @@ class PlaybackService : MediaLibraryService() {
         val c = container
         processor = LyraAudioProcessor().apply { config = c.settings.current.toFxConfig(); publishLevels = true }
         player = buildPlayer(processor, main = true)
+        scope.launch(Dispatchers.IO) { loudnessMemory = LoudnessMemory(File(filesDir, "sonoridad.txt")) }
+        val crossfadePrefs = getSharedPreferences("crossfade", MODE_PRIVATE)
         crossfade = CrossfadeController(
             main = player,
             tailFactory = {
-                buildPlayer(LyraAudioProcessor().apply { config = processor.config }, main = false)
+                // El final de la canción sigue con el volumen igualado que llevaba (ni más fuerte ni más flojo).
+                val fx = LyraAudioProcessor().apply {
+                    config = processor.config
+                    holdGainDb = processor.currentGainDb
+                }
+                tailProcessor = fx
+                buildPlayer(fx, main = false)
             },
             scope = scope,
-            onNewTrack = { processor.onNewTrack() },
+            onNewTrack = ::onNewTrack,
             loudness = { processor.loudness },
+            onTailStart = { tailProcessor?.holdGainDb = processor.currentGainDb },
+            learnedStartLatencyMs = crossfadePrefs.getLong("arranque", -1L).takeIf { it >= 0 },
+            onLatencyLearned = { crossfadePrefs.edit().putLong("arranque", it).apply() },
         )
         radio = RadioController(player, c.music, c.settings, c.downloads, c.library, scope)
         smartShuffle = SmartShuffleController(player, c.recommender, c.downloads, scope)
@@ -179,6 +198,27 @@ class PlaybackService : MediaLibraryService() {
         c.island.attach(player)
         headphones = HeadphonesWatcher(this, ::resumeOnHeadphones).also { it.start() }
         updateWidget()
+    }
+
+    /**
+     * Empieza otra canción: se apunta lo que se midió de la anterior y, si esta ya se escuchó
+     * antes, el volumen igualado acierta desde el principio.
+     */
+    private fun onNewTrack(item: MediaItem?) {
+        rememberLoudness()
+        val id = item?.mediaId?.takeIf { it.isNotEmpty() }
+        processor.onNewTrack(id?.let { loudnessMemory?.get(it) } ?: Float.NaN)
+        loudnessSongId = id
+        loudnessDurationMs = item?.toSong()?.durationMs
+    }
+
+    private fun rememberLoudness() {
+        val id = loudnessSongId ?: return
+        val memory = loudnessMemory ?: return
+        val seconds = loudnessDurationMs?.let { it / 1000f }
+        if (memory.remember(id, processor.measuredDb, processor.measuredSeconds, seconds)) {
+            scope.launch(Dispatchers.IO) { memory.save() }
+        }
     }
 
     /** El widget refleja la canción y si suena (con un pequeño margen para agrupar cambios). */
@@ -747,6 +787,8 @@ class PlaybackService : MediaLibraryService() {
         }
         tracker.commit()
         queueStore.saveBlocking(player)
+        rememberLoudness()
+        loudnessMemory?.save()
         container.island.detach()
         crossfade.release()
         session.release()

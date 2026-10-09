@@ -1,5 +1,6 @@
 package com.lyra.desktop
 
+import com.lyra.desktop.audio.LoudnessNormalizer
 import com.lyra.desktop.data.Downloads
 import com.lyra.desktop.data.Library
 import com.lyra.desktop.data.LibraryEntry
@@ -78,6 +79,39 @@ class DesktopLogicTest {
         lib.recordPlay(song(1), 60_000)
         val recent = lib.entries(lib.current, LibrarySort.RECENT).first()
         assertTrue(recent is LibraryEntry.Playlist && recent.playlist.name == "Zeta")
+    }
+
+    /** Pasa [seconds] de un seno fuerte por [normalizer] y devuelve el nivel (dB) de cada décima. */
+    private fun levels(normalizer: LoudnessNormalizer, amplitude: Float, seconds: Int): List<Double> {
+        val rate = 48_000
+        val block = rate / 10
+        val buffer = FloatArray(block * 2)
+        var t = 0L
+        return (0 until seconds * 10).map {
+            for (i in 0 until block) {
+                val v = (amplitude * kotlin.math.sin(2 * Math.PI * 300 * (t + i) / rate)).toFloat()
+                buffer[i * 2] = v
+                buffer[i * 2 + 1] = v
+            }
+            t += block
+            normalizer.process(buffer, 0, block, enabled = true)
+            10 * kotlin.math.log10(buffer.map { (it * it).toDouble() }.average() + 1e-12)
+        }
+    }
+
+    @Test
+    fun `una cancion ya medida suena bien desde el principio`() {
+        // La primera vez se mide (y al principio suena demasiado fuerte hasta que se ajusta).
+        val first = LoudnessNormalizer(48_000)
+        val firstLevels = levels(first, 0.9f, 12)
+        val settled = firstLevels.last()
+        assertTrue(firstLevels.first() > settled + 6)
+        // La siguiente vez, con lo medido, en medio segundo ya está bien.
+        val again = levels(LoudnessNormalizer(48_000, knownDb = first.measuredDb), 0.9f, 2)
+        assertEquals(settled, again[6], 1.0)
+        // Y una nueva sin medir empieza con la ganancia de la anterior, no sin igualar.
+        val next = levels(LoudnessNormalizer(48_000, startGainDb = first.gainDb), 0.9f, 1)
+        assertEquals(settled, next.first(), 1.0)
     }
 
     @Test

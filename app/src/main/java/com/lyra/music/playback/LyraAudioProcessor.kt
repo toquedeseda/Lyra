@@ -29,7 +29,8 @@ data class AudioFxConfig(
  * fabricante, que en algunos móviles fallan):
  *  - Ecualizador de 10 bandas (filtros de pico RBJ).
  *  - Volumen igualado: mide la sonoridad media de la canción (ignorando silencios)
- *    y acerca la ganancia a un objetivo poco a poco, para que no "bombee".
+ *    y acerca la ganancia a un objetivo poco a poco, para que no "bombee". Si la
+ *    canción ya se midió otra vez ([LoudnessMemory]), acierta desde el principio.
  *  - Limitador suave final para que nunca sature.
  */
 @UnstableApi
@@ -37,6 +38,23 @@ class LyraAudioProcessor : BaseAudioProcessor() {
 
     @Volatile var config: AudioFxConfig = AudioFxConfig()
     @Volatile private var newTrackRequested = false
+    @Volatile private var pendingKnownDb = Float.NaN
+
+    /**
+     * Ganancia fija en dB (NaN: no). La usa el reproductor auxiliar del crossfade: el final de la
+     * canción tiene que seguir exactamente con el volumen que llevaba, sin medir ni cambiar nada.
+     */
+    @Volatile var holdGainDb: Float = Float.NaN
+
+    /** La ganancia que se aplica ahora mismo (dB), para pasársela al auxiliar del crossfade. */
+    @Volatile var currentGainDb: Float = 0f
+        private set
+
+    /** Lo medido de la canción actual: sonoridad media (dB) y segundos con sonido (para recordarlo). */
+    @Volatile var measuredDb: Float = Float.NaN
+        private set
+    @Volatile var measuredSeconds: Float = 0f
+        private set
 
     /** Solo el reproductor principal publica niveles para las barras de la isla. */
     var publishLevels: Boolean = false
@@ -68,6 +86,9 @@ class LyraAudioProcessor : BaseAudioProcessor() {
     private var blockSize = 4800
     private var trackFrames = 0L
 
+    /** Sonoridad ya conocida de la canción actual (NaN si es la primera vez que suena). */
+    private var knownDb = Float.NaN
+
     /** Sonoridad del último bloque (~100 ms) y la media de la canción hasta ahora, en dB. */
     class Loudness(val blockDb: Float, val trackDb: Float, val atNanos: Long)
 
@@ -76,8 +97,9 @@ class LyraAudioProcessor : BaseAudioProcessor() {
     var loudness: Loudness? = null
         private set
 
-    /** Avisa de que empieza otra canción: se vuelve a medir desde cero. */
-    fun onNewTrack() {
+    /** Avisa de que empieza otra canción: se vuelve a medir desde cero. [knownDb]: lo que ya se sabe de ella. */
+    fun onNewTrack(knownDb: Float = Float.NaN) {
+        pendingKnownDb = knownDb
         newTrackRequested = true
     }
 
@@ -110,6 +132,12 @@ class LyraAudioProcessor : BaseAudioProcessor() {
         if (newTrackRequested) {
             newTrackRequested = false
             resetMeasurement()
+            knownDb = pendingKnownDb
+        }
+        val hold = holdGainDb
+        if (!hold.isNaN()) {
+            gainLinear = dbToLinear(hold)
+            gainStep = 0f
         }
         input.order(ByteOrder.LITTLE_ENDIAN)
         output.order(ByteOrder.LITTLE_ENDIAN)
@@ -139,13 +167,15 @@ class LyraAudioProcessor : BaseAudioProcessor() {
             framesUntilUpdate--
             if (framesUntilUpdate <= 0) {
                 gainDb = linearToDb(gainLinear)
-                val target = endBlock(cfg.normalize)
+                val measured = endBlock(cfg.normalize)
+                val target = if (hold.isNaN()) measured else hold
                 // La nueva ganancia se reparte a lo largo del bloque siguiente (sin saltos audibles).
                 gainStep = (dbToLinear(target) - gainLinear) / blockSize
                 framesUntilUpdate = blockSize
             }
         }
         gainDb = linearToDb(gainLinear)
+        currentGainDb = gainDb
     }
 
     private fun analyse(sample: Float) {
@@ -180,23 +210,24 @@ class LyraAudioProcessor : BaseAudioProcessor() {
             energySum += meanSquare
             energyBlocks++
         }
+        val integratedDb = if (energyBlocks > 0) (10 * log10(energySum / energyBlocks + 1e-12)).toFloat() else Float.NaN
         // Media de la canción cuando ya hay unos segundos medidos (si no, NaN).
-        val trackDb = if (energyBlocks >= 20) (10 * log10(energySum / energyBlocks + 1e-12)).toFloat() else Float.NaN
+        val trackDb = if (energyBlocks >= 20) integratedDb else Float.NaN
         loudness = Loudness(blockDb.toFloat(), trackDb, System.nanoTime())
-        val target = if (normalize && energyBlocks >= 5) {
-            val integratedDb = 10 * log10(energySum / energyBlocks + 1e-12)
-            (TARGET_DB - integratedDb).toFloat().coerceIn(MAX_CUT_DB, MAX_BOOST_DB)
-        } else if (normalize) {
-            gainDb
-        } else {
-            0f
-        }
+        measuredDb = integratedDb
+        measuredSeconds = energyBlocks.toFloat() * blockSize / sampleRate.coerceAtLeast(1)
+
         val seconds = trackFrames.toFloat() / sampleRate.coerceAtLeast(1)
-        val maxStepDb = when {
-            !normalize -> FAST_SLEW_DB
-            seconds < 8f -> FAST_SLEW_DB
-            else -> SLOW_SLEW_DB
-        } * blockSize / sampleRate.coerceAtLeast(1)
+        // Lo ya conocido manda, salvo que lo medido ahora se aleje claramente (otra versión de la canción).
+        val known = knownDb.takeIf { !it.isNaN() && (energyBlocks < 300 || abs(it - integratedDb) < 3f) }
+        val (target, slewDb) = when {
+            !normalize -> 0f to FAST_SLEW_DB
+            known != null -> (TARGET_DB - known).toFloat().coerceIn(MAX_CUT_DB, MAX_BOOST_DB) to KNOWN_SLEW_DB
+            energyBlocks >= 5 -> (TARGET_DB - integratedDb).toFloat().coerceIn(MAX_CUT_DB, MAX_BOOST_DB) to
+                (if (seconds < 8f) FAST_SLEW_DB else SLOW_SLEW_DB)
+            else -> gainDb to FAST_SLEW_DB
+        }
+        val maxStepDb = slewDb * blockSize / sampleRate.coerceAtLeast(1)
         return gainDb + (target - gainDb).coerceIn(-maxStepDb, maxStepDb)
     }
 
@@ -224,6 +255,9 @@ class LyraAudioProcessor : BaseAudioProcessor() {
         blockEnergy = 0.0
         blockFrames = 0
         trackFrames = 0
+        knownDb = Float.NaN
+        measuredDb = Float.NaN
+        measuredSeconds = 0f
     }
 
     override fun onFlush() {
@@ -231,14 +265,18 @@ class LyraAudioProcessor : BaseAudioProcessor() {
         lowBand?.clear()
         midBand?.clear()
         highBand?.clear()
-        resetMeasurement()
+        // Al saltar dentro de la misma canción se sigue con lo medido: si se empezara de cero, la
+        // parte a la que se salta (un puente flojito, un final...) cambiaría el volumen de golpe.
+        // Las canciones nuevas avisan con onNewTrack.
+        blockEnergy = 0.0
+        blockFrames = 0
     }
 
     override fun onReset() {
         filters = emptyArray()
         appliedConfig = null
-        gainDb = 0f
-        gainLinear = 1f
+        // La ganancia se queda como estaba: la siguiente canción empieza cerca de la anterior,
+        // no al volumen sin igualar.
         gainStep = 0f
         resetMeasurement()
     }
@@ -314,6 +352,9 @@ class LyraAudioProcessor : BaseAudioProcessor() {
         private const val MAX_CUT_DB = -12f
         private const val FAST_SLEW_DB = 4f
         private const val SLOW_SLEW_DB = 0.6f
+
+        /** Con la sonoridad ya conocida se llega enseguida (en unas décimas) y luego no se mueve. */
+        private const val KNOWN_SLEW_DB = 30f
         private const val LIMIT_THRESHOLD = 0.891f // -1 dBFS
 
         fun dbToLinear(db: Float): Float = 10f.pow(db / 20f)

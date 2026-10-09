@@ -68,7 +68,10 @@ class AppContainer {
     /** Lo de SoundCloud que llega en trozos (HLS) se junta directamente en la caché de lo escuchado. */
     val resolver = StreamResolver(newPipe, alternatives, http, audioCache::fileFor) { settings.current.streamQuality }
     val downloads = Downloads(File(Paths.data, "descargas.json"), resolver, http, settings, scope)
-    val player = PlayerController(scope, settings, library, music, resolver, audioCache, downloads::localFile, Paths.queue)
+    val player = PlayerController(
+        scope, settings, library, music, resolver, audioCache, downloads::localFile, Paths.queue,
+        com.lyra.music.playback.LoudnessMemory(File(Paths.data, "sonoridad.txt")),
+    )
     val lyrics = LyricsRepository(Lrclib(http), innerTube, Paths.lyricsCache)
     val home = HomeRepository(music, library, Paths.homeCache, scope)
     val sharing = PlaylistSharing(http)
