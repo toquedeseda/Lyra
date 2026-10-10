@@ -82,6 +82,7 @@ fun SettingsScreen(contentPadding: PaddingValues) {
 
     var qualityDialog by remember { mutableStateOf<String?>(null) }
     var regionDialog by remember { mutableStateOf(false) }
+    var carDialog by remember { mutableStateOf(false) }
     var transitionDialog by remember { mutableStateOf(false) }
     var accentDialog by remember { mutableStateOf(false) }
     var iconDialog by remember { mutableStateOf(false) }
@@ -214,6 +215,14 @@ fun SettingsScreen(contentPadding: PaddingValues) {
             }
             item { InfoRow("Pantalla de bloqueo", "Los controles salen solos en la pantalla de bloqueo y en la notificación mientras suena algo.") }
 
+            item { Group("Android Auto (coche)") }
+            item {
+                NavRow(
+                    "¿No sale Lyra en el coche?",
+                    "Android Auto esconde las apps que no vienen de Google Play. Toca para ver cómo hacer que salga.",
+                ) { carDialog = true }
+            }
+
             item { Group("Segundo plano (Vivo)") }
             item {
                 val ignoring = ignoresBatteryOptimizations(context)
@@ -340,6 +349,7 @@ fun SettingsScreen(contentPadding: PaddingValues) {
             transitionDialog = false
         }
     }
+    if (carDialog) AndroidAutoDialog(onDismiss = { carDialog = false })
     if (regionDialog) {
         ChoiceDialog(
             title = "País del contenido",

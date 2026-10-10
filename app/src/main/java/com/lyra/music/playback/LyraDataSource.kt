@@ -11,6 +11,7 @@ import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.datasource.TransferListener
 import androidx.media3.datasource.cache.Cache
 import androidx.media3.datasource.cache.CacheDataSource
+import androidx.media3.datasource.cache.CacheWriter
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import com.lyra.music.data.download.DownloadRepository
 import com.lyra.music.data.source.soundcloud.NewPipeDownloader
@@ -56,6 +57,26 @@ class LyraDataSourceFactory(
     private val local = DefaultDataSource.Factory(context)
 
     override fun createDataSource(): DataSource = RoutingDataSource()
+
+    /**
+     * Deja preparado el principio de una canción en la caché: busca su dirección de audio y baja
+     * los primeros [bytes]. Si luego se pasa a ella, empieza a sonar al momento. Null si ya está
+     * descargada (suena del archivo). Quien lo usa llama a `cache()` en segundo plano y puede
+     * pararlo con `cancel()`.
+     */
+    /** Solo busca la dirección de audio (lo que más tarda al cambiar de canción); se queda guardada un rato. */
+    suspend fun resolveAhead(uri: Uri) {
+        val songId = MediaItems.songIdFrom(uri) ?: return
+        if (downloads.localUri(songId) != null) return
+        resolver.resolve(songId, hint = MediaItems.hintFrom(uri))
+    }
+
+    fun precacher(uri: Uri, bytes: Long): CacheWriter? {
+        val songId = MediaItems.songIdFrom(uri) ?: return null
+        if (downloads.localUri(songId) != null) return null
+        val spec = DataSpec.Builder().setUri(uri).setKey(songId).setPosition(0).setLength(bytes).build()
+        return CacheWriter(cached.createDataSource(), spec, null, null)
+    }
 
     private inner class RoutingDataSource : DataSource {
         private val listeners = mutableListOf<TransferListener>()

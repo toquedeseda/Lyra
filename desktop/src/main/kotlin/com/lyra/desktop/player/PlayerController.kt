@@ -436,7 +436,12 @@ class PlayerController(
         commitListening()
         listenedUid = item.uid
         listenedMs = 0
-        val track = trackFor(item, startMs)
+        // «Siguiente» al instante: si es la que ya estaba preparada (abierta y con unos segundos ya
+        // decodificados), se usa esa en vez de abrirla otra vez.
+        val prepared = engine.nextTrack?.takeIf {
+            (it.tag as? QueueItem)?.uid == item.uid && startMs == 0L && it.positionFrames == 0L && it.error == null
+        }
+        val track = prepared ?: trackFor(item, startMs)
         engine.play(track, startPaused = !autoplay)
         _lastPosition = startMs
         _state.update { it.copy(isPlaying = autoplay) }

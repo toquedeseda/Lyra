@@ -9,6 +9,15 @@ Lyra no está en Google Play, así que el móvil puede decir que es una app «da
 4. En **Xiaomi, Vivo, Oppo, Realme o Huawei** puede salir además el aviso de seguridad del propio móvil: pulsa **Instalar igualmente** o **Continuar** (a veces hay que esperar unos segundos o poner la contraseña de la cuenta).
 5. Las siguientes versiones se instalan desde la propia app (Ajustes → Buscar actualizaciones): no hace falta repetir esto.
 
+### En el coche (Android Auto)
+
+Android Auto esconde las apps que no vienen de Google Play, así que Lyra no sale en el coche hasta que lo permites (solo una vez):
+
+1. Abre los ajustes de Android Auto. Desde Lyra: **Ajustes → ¿No sale Lyra en el coche? → Abrir Android Auto** (o en los Ajustes del móvil, busca «Android Auto»).
+2. Baja del todo y toca **Versión** unas 10 veces, hasta que pregunte si permites los ajustes para desarrolladores → **Aceptar**.
+3. Arriba a la derecha, **⋮ → Ajustes para desarrolladores** → activa **Fuentes desconocidas**.
+4. Desconecta el móvil del coche y vuelve a conectarlo. Si aún no sale: en Android Auto, **Personalizar menú de aplicaciones** → marca Lyra.
+
 ### En el ordenador (Windows 10 y 11)
 
 1. **Descarga** `Lyra-v…-Windows.msi` (abajo, en *Assets*). Si el navegador dice que «no se descarga habitualmente», pulsa **⋯** → **Conservar** (en Chrome, **Descargar de todos modos**).

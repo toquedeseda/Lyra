@@ -93,6 +93,7 @@ class PlaybackService : MediaLibraryService() {
     private lateinit var player: ExoPlayer
     private lateinit var session: MediaLibrarySession
     private lateinit var crossfade: CrossfadeController
+    private lateinit var preloader: NextTrackPreloader
     private lateinit var radio: RadioController
     private lateinit var tracker: PlaybackTracker
     private lateinit var queueStore: QueueStore
@@ -164,6 +165,8 @@ class PlaybackService : MediaLibraryService() {
             learnedStartLatencyMs = crossfadePrefs.getLong("arranque", -1L).takeIf { it >= 0 },
             onLatencyLearned = { crossfadePrefs.edit().putLong("arranque", it).apply() },
         )
+        // «Siguiente» al instante: las dos que vienen después, ya preparadas.
+        preloader = NextTrackPreloader(player, c.dataSourceFactory, { c.network.isOnline }, scope)
         radio = RadioController(player, c.music, c.settings, c.downloads, c.library, scope)
         smartShuffle = SmartShuffleController(player, c.recommender, c.downloads, scope)
         tracker = PlaybackTracker(player, c.library, scope)
@@ -791,6 +794,7 @@ class PlaybackService : MediaLibraryService() {
         loudnessMemory?.save()
         container.island.detach()
         crossfade.release()
+        preloader.release()
         session.release()
         player.release()
         scope.cancel()
