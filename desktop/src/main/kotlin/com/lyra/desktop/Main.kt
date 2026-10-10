@@ -1,10 +1,12 @@
 package com.lyra.desktop
 
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.graphics.painter.BitmapPainter
@@ -26,16 +28,12 @@ import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberTrayState
 import androidx.compose.ui.window.rememberWindowState
-import coil3.ImageLoader
 import coil3.SingletonImageLoader
-import coil3.disk.DiskCache
-import coil3.memory.MemoryCache
-import coil3.network.okhttp.OkHttpNetworkFetcherFactory
-import coil3.request.crossfade
 import com.lyra.desktop.audio.Natives
 import com.lyra.desktop.data.WindowBounds
 import com.lyra.desktop.system.Integrations
 import com.lyra.desktop.system.MediaControls
+import com.lyra.desktop.system.MemorySaver
 import com.lyra.desktop.system.TaskbarButtons
 import com.lyra.desktop.system.WindowsSystem
 import com.lyra.desktop.ui.FullScreenPlayer
@@ -48,14 +46,19 @@ import com.lyra.desktop.ui.components.Typing
 import com.lyra.music.data.share.PlaylistSharing
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
-import okio.Path.Companion.toOkioPath
+import kotlinx.coroutines.withContext
 import org.jetbrains.skia.Image
+import java.awt.AWTEvent
 import java.awt.Dimension
+import java.awt.Toolkit
+import java.awt.event.AWTEventListener
+import java.awt.event.WindowEvent
 import javax.swing.UIManager
 import kotlin.system.exitProcess
 
@@ -82,14 +85,9 @@ fun main(args: Array<String>) {
 
     val app = AppContainer()
     Lyra.app = app
-    SingletonImageLoader.setSafe { context ->
-        ImageLoader.Builder(context)
-            .components { add(OkHttpNetworkFetcherFactory(callFactory = { app.http })) }
-            .memoryCache { MemoryCache.Builder().maxSizePercent(context, 0.2).build() }
-            .diskCache { DiskCache.Builder().directory(Paths.imageCache.toOkioPath()).maxSizeBytes(300L * 1024 * 1024).build() }
-            .crossfade(true)
-            .build()
-    }
+    // Ajustes → «Gastar aún menos memoria»: la ventana se dibuja con el procesador.
+    if (app.settings.current.drawWithCpu) System.setProperty("skiko.renderApi", "SOFTWARE")
+    SingletonImageLoader.setSafe { context -> MemorySaver.imageLoader(context, { app.http }) }
     // FFmpeg se prepara ya, para que la primera canción no tarde.
     app.scope.launch(Dispatchers.IO) { runCatching { Natives.ensureLoaded() } }
     app.player.restore()
@@ -116,6 +114,8 @@ fun main(args: Array<String>) {
         )
         val icon = remember { iconPainter(256) }
         val trayState = rememberTrayState()
+        // Lo que se ve en cada pantalla (dónde estabas en cada lista…), aunque la ventana se suelte.
+        val screens = rememberSaveableStateHolder()
         // Como Spotify: lo que suena en el título de la ventana (y al pasar por la barra de tareas).
         val playing by remember {
             app.player.state.map { s -> s.current?.song?.takeIf { s.isPlaying } }.distinctUntilChanged()
@@ -134,6 +134,38 @@ fun main(args: Array<String>) {
                 trayState.sendNotification(
                     Notification("Lyra sigue abierta", "La música sigue sonando. Para cerrarla del todo: clic derecho en este icono → Salir.", Notification.Type.None),
                 )
+            }
+        }
+
+        // Si se está usando otro programa (ninguna ventana de Lyra delante).
+        var appFocused by remember { mutableStateOf(true) }
+        DisposableEffect(Unit) {
+            val listener = AWTEventListener { event ->
+                when (event.id) {
+                    WindowEvent.WINDOW_GAINED_FOCUS -> appFocused = true
+                    WindowEvent.WINDOW_LOST_FOCUS -> if ((event as WindowEvent).oppositeWindow == null) appFocused = false
+                }
+            }
+            Toolkit.getDefaultToolkit().addAWTEventListener(listener, AWTEvent.WINDOW_FOCUS_EVENT_MASK)
+            onDispose { Toolkit.getDefaultToolkit().removeAWTEventListener(listener) }
+        }
+        // Mientras no se usa Lyra (en la bandeja, minimizada o detrás de otras ventanas un rato), se
+        // suelta la memoria que solo hacía falta para verla y Windows la recupera; cada pocos minutos
+        // otra vez, por si al cambiar de canción se volvió a llenar. La música sigue igual. En la
+        // bandeja, además, se desmonta la ventana (ver más abajo); al abrirla vuelve a la misma pantalla.
+        val inUse = visible && !windowState.isMinimized && appFocused
+        LaunchedEffect(inUse) {
+            if (inUse) return@LaunchedEffect
+            delay(
+                when {
+                    !visible -> 2_000L
+                    windowState.isMinimized -> 10_000L
+                    else -> 60_000L
+                },
+            )
+            while (true) {
+                withContext(Dispatchers.Default) { MemorySaver.release() }
+                delay(3 * 60_000L)
             }
         }
 
@@ -207,7 +239,7 @@ fun main(args: Array<String>) {
                         if (position.isSpecified) app.settings.update { it.copy(window = bounds) }
                     }
             }
-            MainContent(actions, onToggleMini = { mini = !mini })
+            if (visible) screens.SaveableStateProvider("ventana") { MainContent(actions, onToggleMini = { mini = !mini }) }
         }
 
         if (mini) {

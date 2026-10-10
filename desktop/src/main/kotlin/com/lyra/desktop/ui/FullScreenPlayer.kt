@@ -43,10 +43,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -57,6 +57,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import coil3.compose.LocalPlatformContext
+import coil3.request.ImageRequest
+import coil3.request.transformations
+import coil3.size.Size
+import coil3.transform.Transformation
 import com.lyra.desktop.data.RepeatMode
 import com.lyra.desktop.ui.components.Cover
 import com.lyra.desktop.ui.components.IconBtn
@@ -66,9 +71,50 @@ import com.lyra.desktop.ui.components.PlayButton
 import com.lyra.desktop.ui.components.ThinSlider
 import com.lyra.desktop.ui.components.formatDuration
 import kotlinx.coroutines.delay
+import org.jetbrains.skia.Bitmap
+import org.jetbrains.skia.FilterMipmap
+import org.jetbrains.skia.FilterMode
+import org.jetbrains.skia.FilterTileMode
+import org.jetbrains.skia.Image
+import org.jetbrains.skia.ImageFilter
+import org.jetbrains.skia.MipmapMode
+import org.jetbrains.skia.Paint
+import org.jetbrains.skia.Rect
+import org.jetbrains.skia.Surface
 import java.awt.Point
 import java.awt.Toolkit
 import java.awt.image.BufferedImage
+
+/** Lado de la portada que se pide para el fondo (en píxeles): difuminada, una pequeña basta. */
+private const val BLURRED_ART_PX = 96
+
+/**
+ * El fondo difuminado se prepara una sola vez: la portada encogida a un cuadradito y algo borrosa.
+ * Estirada a toda la pantalla con suavizado se ve igual de difuminada, sin tener que difuminar la
+ * pantalla entera en cada cuadro (eso gastaba mucha memoria y procesador).
+ */
+private object BlurredBackdrop : Transformation() {
+    private const val SIDE = 32
+    private const val SIGMA = 1.2f
+
+    override val cacheKey = "lyra-fondo-difuminado-$SIDE"
+
+    override suspend fun transform(input: Bitmap, size: Size): Bitmap =
+        Surface.makeRasterN32Premul(SIDE, SIDE).use { surface ->
+            Image.makeFromBitmap(input).use { image ->
+                val side = minOf(image.width, image.height).toFloat()
+                val center = Rect.makeXYWH((image.width - side) / 2f, (image.height - side) / 2f, side, side)
+                Paint().use { paint ->
+                    paint.imageFilter = ImageFilter.makeBlur(SIGMA, SIGMA, FilterTileMode.CLAMP)
+                    surface.canvas.drawImageRect(
+                        image, center, Rect.makeWH(SIDE.toFloat(), SIDE.toFloat()),
+                        FilterMipmap(FilterMode.LINEAR, MipmapMode.LINEAR), paint, true,
+                    )
+                }
+            }
+            surface.makeImageSnapshot().use { Bitmap.makeFromImage(it) }
+        }
+}
 
 /** Un cursor invisible: con el ratón quieto en pantalla completa, no tapa nada. */
 private val HiddenPointer: PointerIcon by lazy {
@@ -117,14 +163,19 @@ fun FullScreenPlayer(actions: LyraActions, onExit: () -> Unit) {
                     .pointerHoverIcon(if (idle) HiddenPointer else PointerIcon.Default),
             ) {
                 val art = song?.thumbnailUrl?.let(::bigArtwork)
-                // Fondo: la propia portada, enorme, muy difuminada y oscurecida.
+                // Fondo: la propia portada, enorme, muy difuminada y oscurecida (ver BlurredBackdrop).
+                val context = LocalPlatformContext.current
                 Crossfade(art, animationSpec = tween(900), label = "fondo") { url ->
                     if (url != null) {
                         AsyncImage(
-                            model = url,
+                            model = remember(url) {
+                                ImageRequest.Builder(context).data(url).size(BLURRED_ART_PX).transformations(BlurredBackdrop).build()
+                            },
                             contentDescription = null,
                             contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize().blur(110.dp).alpha(0.5f),
+                            alpha = 0.5f,
+                            filterQuality = FilterQuality.High,
+                            modifier = Modifier.fillMaxSize(),
                         )
                     }
                 }

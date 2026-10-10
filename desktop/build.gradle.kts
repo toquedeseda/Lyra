@@ -76,10 +76,24 @@ tasks.test {
     environment("LYRA_LIVE_TESTS", System.getenv("LYRA_LIVE_TESTS") ?: "")
 }
 
+// Java gastando poca memoria (medido con `gradlew :desktop:sondaMemoria`, ver MemoryProbe.kt):
+//  - Serial: la forma de recoger memoria de Java más ahorradora (G1, la de siempre, se reservaba
+//    unos 60 MB solo para organizarse); con el montón pequeño sus paradas son de centésimas.
+//  - Empieza con poco montón y lo devuelve a Windows cuando le sobra (MinHeapFreeRatio/MaxHeapFreeRatio).
+//  - TieredStopAtLevel=1: solo el compilador rápido de Java (menos memoria y menos procesador al abrir).
+//  - Sin el dibujo de Java2D con DirectX 9 (la ventana se dibuja con Skia; ese solo gastaba).
+//  - JavaCPP no cuenta la memoria de todo el proceso (con el tope pequeño podría negarse a FFmpeg).
+val lowMemoryJvmArgs = listOf(
+    "-Xms16m", "-Xmx512m",
+    "-XX:+UseSerialGC", "-XX:MinHeapFreeRatio=20", "-XX:MaxHeapFreeRatio=50",
+    "-XX:TieredStopAtLevel=1", "-XX:-UsePerfData",
+    "-Dsun.java2d.d3d=false", "-Dorg.bytedeco.javacpp.maxPhysicalBytes=0",
+)
+
 compose.desktop {
     application {
         mainClass = "com.lyra.desktop.MainKt"
-        jvmArgs += listOf("-Xmx768m", "-Dfile.encoding=UTF-8", "-Dsun.stdout.encoding=UTF-8")
+        jvmArgs += lowMemoryJvmArgs + listOf("-Dfile.encoding=UTF-8", "-Dsun.stdout.encoding=UTF-8")
 
         // Al empaquetar se quitan los iconos que no se usan (ver proguard-rules.pro).
         buildTypes.release.proguard {
@@ -118,4 +132,19 @@ compose.desktop {
 // Al probar desde el código: datos aparte (%APPDATA%\Lyra-dev) y sin actualizaciones.
 tasks.withType<JavaExec>().configureEach {
     systemProperty("lyra.dev", "1")
+}
+
+// Cuánta memoria gasta Lyra para Windows, paso a paso (ver MemoryProbe.kt).
+tasks.register<JavaExec>("sondaMemoria") {
+    group = "verification"
+    description = "Mide la memoria de Lyra para Windows con una ventana de verdad."
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("com.lyra.desktop.MemoryProbeKt")
+    workingDir = projectDir
+    jvmArgs((findProperty("opciones") as String?)?.split(' ')?.filter { it.isNotBlank() } ?: lowMemoryJvmArgs)
+    systemProperty("sonda.etiqueta", findProperty("etiqueta") ?: "prueba")
+    systemProperty("sonda.imagenes", findProperty("imagenes") ?: "nuevo")
+    systemProperty("sonda.soltar", findProperty("soltar") ?: "1")
+    systemProperty("sonda.ancho", findProperty("ancho") ?: "1280")
+    systemProperty("sonda.alto", findProperty("alto") ?: "820")
 }

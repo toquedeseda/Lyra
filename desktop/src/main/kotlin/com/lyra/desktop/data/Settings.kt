@@ -89,6 +89,8 @@ data class DesktopSettings(
     /** Ya se avisó (una vez) de que, al cerrar, Lyra sigue en la bandeja. */
     val trayHintShown: Boolean = false,
     val startWithWindows: Boolean = false,
+    /** Dibujar la ventana con el procesador (menos memoria, animaciones menos suaves). Al abrir. */
+    val drawWithCpu: Boolean = false,
     val miniX: Int? = null,
     val miniY: Int? = null,
     // Otros

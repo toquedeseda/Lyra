@@ -147,6 +147,11 @@ fun SettingsScreen() {
                         WindowsSystem.setStartWithWindows(enabled)
                     }
                 }
+                Toggle(
+                    "Gastar aún menos memoria",
+                    "Dibuja la ventana con el procesador en vez de con la tarjeta gráfica: unos 100 MB menos con Lyra abierta, pero las animaciones pueden ir menos suaves. Se nota al volver a abrir Lyra.",
+                    s.drawWithCpu,
+                ) { update { copy(drawWithCpu = it) } }
                 if (com.lyra.desktop.system.DiscordPresence.available) {
                     Toggle("Mostrar en Discord lo que escuchas", "En tu perfil sale «Escuchando Lyra» con la canción (si Discord está abierto en el PC).", s.discordPresence) { update { copy(discordPresence = it) } }
                 }

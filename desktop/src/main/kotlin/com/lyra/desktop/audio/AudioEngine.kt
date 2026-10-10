@@ -568,7 +568,8 @@ class AudioEngine(private val events: Events) {
     }
 
     private companion object {
-        const val BUFFER_FRAMES = RATE / 8 // 125 ms
+        // 200 ms: aunque Java pare un momento a recoger memoria, la tarjeta de sonido tiene de sobra.
+        const val BUFFER_FRAMES = RATE / 5
         const val FADE_IN_FRAMES = RATE / 25 // 40 ms
         const val PAUSE_FADE_FRAMES = RATE * 3 / 20 // 150 ms
         const val TAIL_FADE_FRAMES = RATE * 2 / 5 // 400 ms

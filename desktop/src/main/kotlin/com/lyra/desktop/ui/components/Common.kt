@@ -1,11 +1,7 @@
 package com.lyra.desktop.ui.components
 
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -41,8 +37,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -71,6 +71,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.lyra.desktop.ui.LyraColors
+import kotlinx.coroutines.delay
 import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -478,17 +479,28 @@ fun MessageView(
     }
 }
 
-/** Barritas que se mueven cuando esa canción está sonando. */
+/**
+ * Barritas que se mueven cuando esa canción está sonando. Van a 15 cuadros por segundo (para algo
+ * tan pequeño no se nota y la ventana se dibuja cuatro veces menos) y en pausa se quedan quietas.
+ */
 @Composable
 fun PlayingBars(playing: Boolean, modifier: Modifier = Modifier, color: Color = LyraColors.Accent) {
-    val transition = rememberInfiniteTransition()
-    val heights = listOf(520, 380, 640).map { duration ->
-        transition.animateFloat(0.25f, 1f, infiniteRepeatable(tween(duration, easing = FastOutSlowInEasing), RepeatMode.Reverse))
+    var time by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(playing) {
+        if (!playing) return@LaunchedEffect
+        val start = withFrameMillis { it } - time
+        while (true) {
+            delay(BARS_FRAME_MS)
+            time = withFrameMillis { it } - start
+        }
     }
     Canvas(modifier) {
         val barWidth = size.width / 5
-        heights.forEachIndexed { index, value ->
-            val h = size.height * (if (playing) value.value else 0.3f)
+        BARS_HALF_PERIODS_MS.forEachIndexed { index, half ->
+            // Sube y baja (como un muelle) entre el 25 % y el 100 % de la altura.
+            val phase = (time % (2 * half)).toFloat() / half
+            val value = 0.25f + 0.75f * FastOutSlowInEasing.transform(if (phase > 1f) 2f - phase else phase)
+            val h = size.height * (if (playing) value else 0.3f)
             drawRoundRect(
                 color,
                 topLeft = Offset(index * barWidth * 2, size.height - h),
@@ -498,6 +510,9 @@ fun PlayingBars(playing: Boolean, modifier: Modifier = Modifier, color: Color = 
         }
     }
 }
+
+private const val BARS_FRAME_MS = 66L
+private val BARS_HALF_PERIODS_MS = longArrayOf(520, 380, 640)
 
 /** Fondo al pasar el ratón por encima (filas y tarjetas). */
 @Composable
