@@ -131,10 +131,20 @@ class RadioController(
                 continuation = page.continuation
                 val added = append(page.songs, radio = true)
                 if (added == 0) continuation = null
+                // Si la lista ya se había acabado (p. ej. esperando cobertura), sigue con la radio.
+                if (added > 0 && player.playbackState == Player.STATE_ENDED) player.seekToNextMediaItem()
             }
             loading = false
+            // Sin cobertura no llegan canciones: se vuelve a probar al rato (antes la radio se
+            // quedaba sin más canciones y la música se paraba al acabarse la lista).
+            if (page == null) {
+                handler.removeCallbacks(retry)
+                handler.postDelayed(retry, RETRY_MS)
+            }
         }
     }
+
+    private val retry = Runnable { maybeExtend() }
 
     /** Añade [candidates] al final. Con [radio], quedan marcadas como "de la radio" (no son de tu lista). */
     private suspend fun append(candidates: List<Song>, radio: Boolean = false): Int {
@@ -195,6 +205,9 @@ class RadioController(
     }
 
     companion object {
+        /** Cada cuánto se vuelve a pedir la radio mientras no llega (sin cobertura). */
+        private const val RETRY_MS = 20_000L
+
         fun songKey(song: Song): String = SongMatcher.songKey(song)
 
         fun spreadArtists(songs: List<Song>, previousArtist: String?): List<Song> = SongMatcher.spreadArtists(songs, previousArtist)

@@ -11,6 +11,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.HttpDataSource
+import androidx.media3.datasource.cache.ContentMetadata
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
@@ -45,6 +46,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.guava.future
 import kotlinx.coroutines.isActive
@@ -72,6 +74,9 @@ object LyraCommands {
     /** En los extras de la sesión: de dónde sale lo que suena (texto e id). */
     const val EXTRA_CONTEXT_LABEL = "lyra.context_label"
     const val EXTRA_CONTEXT_ID = "lyra.context_id"
+
+    /** En los extras de la sesión: se está esperando a que vuelva la cobertura. */
+    const val EXTRA_WAITING_NETWORK = "lyra.waiting_network"
 
     val LIKE = SessionCommand(ACTION_LIKE, Bundle.EMPTY)
     val START_RADIO = SessionCommand(ACTION_START_RADIO, Bundle.EMPTY)
@@ -106,6 +111,11 @@ class PlaybackService : MediaLibraryService() {
     private var widgetJob: kotlinx.coroutines.Job? = null
     private var contextLabel: String? = null
     private var contextId: String? = null
+
+    /** Sin cobertura: se espera a la red en vez de saltar canciones (ver Coverage.kt). */
+    private lateinit var loadPolicy: WaitForNetworkPolicy
+    private lateinit var coverage: CoverageWatcher
+    private var waitingForNetwork = false
 
     /** Lo fuerte que suena cada canción ya escuchada (se carga aparte para no frenar el arranque). */
     @Volatile private var loudnessMemory: LoudnessMemory? = null
@@ -144,6 +154,7 @@ class PlaybackService : MediaLibraryService() {
         super.onCreate()
         val c = container
         processor = LyraAudioProcessor().apply { config = c.settings.current.toFxConfig(); publishLevels = true }
+        loadPolicy = WaitForNetworkPolicy({ c.network.isOnline })
         player = buildPlayer(processor, main = true)
         scope.launch(Dispatchers.IO) { loudnessMemory = LoudnessMemory(File(filesDir, "sonoridad.txt")) }
         val crossfadePrefs = getSharedPreferences("crossfade", MODE_PRIVATE)
@@ -187,6 +198,12 @@ class PlaybackService : MediaLibraryService() {
             .build()
         // Lo que sonaba al cerrar sigue diciendo de dónde venía.
         setContext(contextLabel, contextId)
+        coverage = CoverageWatcher(player, loadPolicy, ::playableOffline, scope) { waiting ->
+            waitingForNetwork = waiting
+            publishExtras()
+            // En el coche sale como aviso (la música sigue sola cuando vuelve la señal).
+            if (waiting) session.sendError(SessionError(SessionError.ERROR_IO, "Sin cobertura: Lyra seguirá sola en cuanto vuelva la señal"))
+        }
 
         setMediaNotificationProvider(
             DefaultMediaNotificationProvider.Builder(this)
@@ -242,15 +259,29 @@ class PlaybackService : MediaLibraryService() {
         contextId = id
         queueStore.contextLabel = label
         queueStore.contextId = id
-        if (::session.isInitialized) {
-            session.setSessionExtras(
-                Bundle().apply {
-                    putString(LyraCommands.EXTRA_CONTEXT_LABEL, label)
-                    putString(LyraCommands.EXTRA_CONTEXT_ID, id)
-                },
-            )
-        }
+        publishExtras()
         queueStore.scheduleSave(player)
+    }
+
+    /** Lo que la app y el coche leen de la sesión: de dónde sale lo que suena y si falta cobertura. */
+    private fun publishExtras() {
+        if (!::session.isInitialized) return
+        session.setSessionExtras(
+            Bundle().apply {
+                putString(LyraCommands.EXTRA_CONTEXT_LABEL, contextLabel)
+                putString(LyraCommands.EXTRA_CONTEXT_ID, contextId)
+                putBoolean(LyraCommands.EXTRA_WAITING_NETWORK, waitingForNetwork)
+            },
+        )
+    }
+
+    /** Suena sin internet: descargada, ya entera en la caché o lo de SoundCloud ya juntado. */
+    private fun playableOffline(item: MediaItem): Boolean {
+        val id = item.mediaId.ifEmpty { return false }
+        if (container.downloads.isDownloaded(id) || container.streamResolver.localCopy(id) != null) return true
+        val cache = container.playerCache
+        val length = ContentMetadata.getContentLength(cache.getContentMetadata(id))
+        return length > 0 && cache.isCached(id, 0, length)
     }
 
     /** Una cola nueva empieza siempre sin el aleatorio inteligente (solo se activa a mano mientras suena). */
@@ -284,7 +315,7 @@ class PlaybackService : MediaLibraryService() {
         }.setEnableDecoderFallback(true)
 
         return ExoPlayer.Builder(this, renderers)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(container.dataSourceFactory))
+            .setMediaSourceFactory(DefaultMediaSourceFactory(container.dataSourceFactory).setLoadErrorHandlingPolicy(loadPolicy))
             .setAudioAttributes(
                 AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(),
                 /* handleAudioFocus = */ main,
@@ -292,8 +323,11 @@ class PlaybackService : MediaLibraryService() {
             .setHandleAudioBecomingNoisy(main)
             .setWakeMode(if (main) C.WAKE_MODE_NETWORK else C.WAKE_MODE_NONE)
             .setLoadControl(
+                // Siempre entre 2 y 5 minutos de música guardados por delante (antes podían ser solo
+                // 30 s): si se va la cobertura (túneles, el coche…), sigue sonando un buen rato.
                 DefaultLoadControl.Builder()
-                    .setBufferDurationsMs(30_000, 180_000, 1_000, 2_500)
+                    .setBufferDurationsMs(120_000, 300_000, 1_000, 2_500)
+                    .setPrioritizeTimeOverSizeThresholds(true)
                     .build(),
             )
             .setSeekBackIncrementMs(10_000)
@@ -508,16 +542,17 @@ class PlaybackService : MediaLibraryService() {
         }
 
         override fun onPlayerError(error: PlaybackException) {
-            val songId = player.currentMediaItem?.mediaId ?: return
-            // Sin internet, lo que no está descargado no puede sonar: se salta sin reintentar.
-            if (!container.network.isOnline && !container.downloads.isDownloaded(songId)) {
+            val item = player.currentMediaItem ?: return
+            val songId = item.mediaId
+            // Sin internet, lo que no suena sin red no puede cargar. Antes se saltaba a la siguiente,
+            // que tampoco cargaba, y así toda la lista; ahora se sigue con la siguiente que suena sin
+            // red o, si no hay ninguna, se espera a que vuelva la señal y continúa donde iba.
+            if (!container.network.isOnline && !playableOffline(item)) {
                 retryCount = 0
-                if (player.hasNextMediaItem()) {
-                    scope.launch {
-                        player.seekToNextMediaItem()
-                        player.prepare()
-                        player.play()
-                    }
+                val next = coverage.nextPlayableOffline()
+                scope.launch {
+                    if (next != null) player.seekTo(next, 0) else container.network.online.first { it }
+                    if (player.playbackState == Player.STATE_IDLE) player.prepare()
                 }
                 return
             }
@@ -795,6 +830,7 @@ class PlaybackService : MediaLibraryService() {
         container.island.detach()
         crossfade.release()
         preloader.release()
+        coverage.release()
         session.release()
         player.release()
         scope.cancel()

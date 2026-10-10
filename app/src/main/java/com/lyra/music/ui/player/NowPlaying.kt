@@ -338,6 +338,14 @@ fun NowPlayingScreen(
                                 }
                             },
                     )
+                    if (state.waitingForNetwork) {
+                        Text(
+                            "Sin cobertura · seguirá sola en cuanto vuelva la señal",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = LyraColors.Accent,
+                            modifier = Modifier.padding(top = 6.dp),
+                        )
+                    }
                 }
                 LikeButton(song.id in liked, onClick = { actions.toggleLike(song) }, size = 28.dp, inactiveTint = LyraColors.TextPrimary)
             }

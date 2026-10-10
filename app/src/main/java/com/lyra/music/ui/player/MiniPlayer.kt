@@ -143,7 +143,11 @@ fun MiniPlayer(modifier: Modifier = Modifier, sharedScope: SharedTransitionScope
             ) { current ->
                 Column {
                     Text(current.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(current.artistsText, style = MaterialTheme.typography.bodySmall, color = LyraColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (state.waitingForNetwork) {
+                        Text("Sin cobertura · seguirá sola", style = MaterialTheme.typography.bodySmall, color = LyraColors.Accent, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    } else {
+                        Text(current.artistsText, style = MaterialTheme.typography.bodySmall, color = LyraColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
                 }
             }
             LikeButton(song.id in liked, onClick = { actions.toggleLike(song) }, size = 22.dp)

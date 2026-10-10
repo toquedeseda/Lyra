@@ -48,6 +48,8 @@ data class PlayerUiState(
     val recommendedIds: Set<String> = emptySet(),
     /** Canciones que ha añadido la radio al acabarse la lista. */
     val radioIds: Set<String> = emptySet(),
+    /** Sin cobertura: la música espera a que vuelva la señal (y sigue sola). */
+    val waitingForNetwork: Boolean = false,
 )
 
 data class Progress(val positionMs: Long = 0, val durationMs: Long = 0, val bufferedMs: Long = 0)
@@ -97,13 +99,21 @@ class PlayerConnection(
         }
     }
 
-    /** El servicio cuenta de dónde sale lo que suena (también si lo puso el coche o al reabrir la app). */
+    /**
+     * El servicio cuenta de dónde sale lo que suena (también si lo puso el coche o al reabrir la app)
+     * y si se está esperando cobertura.
+     */
     private fun applyContext(extras: Bundle) {
-        if (!extras.containsKey(LyraCommands.EXTRA_CONTEXT_LABEL) && !extras.containsKey(LyraCommands.EXTRA_CONTEXT_ID)) return
+        val waiting = extras.getBoolean(LyraCommands.EXTRA_WAITING_NETWORK)
+        if (!extras.containsKey(LyraCommands.EXTRA_CONTEXT_LABEL) && !extras.containsKey(LyraCommands.EXTRA_CONTEXT_ID)) {
+            _state.update { it.copy(waitingForNetwork = waiting) }
+            return
+        }
         _state.update {
             it.copy(
                 playingFrom = extras.getString(LyraCommands.EXTRA_CONTEXT_LABEL),
                 contextId = extras.getString(LyraCommands.EXTRA_CONTEXT_ID),
+                waitingForNetwork = waiting,
             )
         }
     }
