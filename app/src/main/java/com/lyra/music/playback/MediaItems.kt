@@ -18,6 +18,7 @@ object MediaItems {
     private const val EXTRA_SONG = "lyra.song"
     private const val EXTRA_RECOMMENDED = "lyra.recommended"
     private const val EXTRA_RADIO = "lyra.radio"
+    private const val EXTRA_QUEUED = "lyra.queued"
     private val json = Json { ignoreUnknownKeys = true }
 
     /** Canciones ya leídas de su JSON (con colas de cientos, leerlas en cada cambio daba tirones). */
@@ -57,19 +58,22 @@ object MediaItems {
     /**
      * [recommended]: la ha metido el aleatorio inteligente (se marca en la cola).
      * [radio]: la ha añadido la radio al acabarse tu lista (el aleatorio no la mezcla con la lista).
+     * [queued]: la has añadido tú a la cola («En cola», como en Spotify).
      */
-    fun Song.toMediaItem(coverFile: File? = null, recommended: Boolean = false, radio: Boolean = false): MediaItem = MediaItem.Builder()
-        .setMediaId(id)
-        .setUri(uriFor(this))
-        .setCustomCacheKey(id)
-        .setMediaMetadata(toMetadata(coverFile, recommended, radio))
-        .build()
+    fun Song.toMediaItem(coverFile: File? = null, recommended: Boolean = false, radio: Boolean = false, queued: Boolean = false): MediaItem =
+        MediaItem.Builder()
+            .setMediaId(id)
+            .setUri(uriFor(this))
+            .setCustomCacheKey(id)
+            .setMediaMetadata(toMetadata(coverFile, recommended, radio, queued))
+            .build()
 
-    fun Song.toMetadata(coverFile: File? = null, recommended: Boolean = false, radio: Boolean = false): MediaMetadata {
+    fun Song.toMetadata(coverFile: File? = null, recommended: Boolean = false, radio: Boolean = false, queued: Boolean = false): MediaMetadata {
         val extras = Bundle().apply {
             putString(EXTRA_SONG, json.encodeToString(Song.serializer(), this@toMetadata))
             if (recommended) putBoolean(EXTRA_RECOMMENDED, true)
             if (radio) putBoolean(EXTRA_RADIO, true)
+            if (queued) putBoolean(EXTRA_QUEUED, true)
         }
         return MediaMetadata.Builder()
             .setTitle(title)
@@ -112,6 +116,9 @@ object MediaItems {
 
     /** Canción que ha añadido la radio infinita detrás de tu lista. */
     fun MediaItem.isRadio(): Boolean = mediaMetadata.extras?.getBoolean(EXTRA_RADIO, false) == true
+
+    /** La has añadido tú a la cola («Añadir a la cola» o «Reproducir a continuación»). */
+    fun MediaItem.isQueued(): Boolean = mediaMetadata.extras?.getBoolean(EXTRA_QUEUED, false) == true
 
     /** Los elementos del árbol de Android Auto llevan el contexto delante: `liked::yt:abc`. */
     fun songIdOf(mediaId: String): String = mediaId.substringAfter("::")

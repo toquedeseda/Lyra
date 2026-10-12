@@ -53,6 +53,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import java.io.File
 
@@ -65,11 +66,20 @@ object LyraCommands {
     const val ACTION_SHUFFLE = "lyra.shuffle"
     const val ACTION_REPEAT = "lyra.repeat"
     const val ACTION_RADIO_HERE = "lyra.radio_here"
+    const val ACTION_PLAY_NEXT = "lyra.play_next"
+    const val ACTION_ADD_TO_QUEUE = "lyra.add_to_queue"
+    const val ACTION_QUEUE_MOVE = "lyra.queue_move"
+    const val ACTION_QUEUE_CLEAR = "lyra.queue_clear"
     const val ARG_SONG = "song"
     const val ARG_PLAYLIST = "playlist"
     const val ARG_SHUFFLE = "shuffle"
     const val ARG_FROM = "from"
     const val ARG_CONTEXT = "context"
+    const val ARG_SONGS = "songs"
+
+    /** Al mover en la cola: posiciones entre las que vienen (0 = la siguiente). */
+    const val ARG_MOVE_FROM = "move_from"
+    const val ARG_MOVE_TO = "move_to"
 
     /** En los extras de la sesión: de dónde sale lo que suena (texto e id). */
     const val EXTRA_CONTEXT_LABEL = "lyra.context_label"
@@ -85,6 +95,10 @@ object LyraCommands {
     val SHUFFLE = SessionCommand(ACTION_SHUFFLE, Bundle.EMPTY)
     val REPEAT = SessionCommand(ACTION_REPEAT, Bundle.EMPTY)
     val RADIO_HERE = SessionCommand(ACTION_RADIO_HERE, Bundle.EMPTY)
+    val PLAY_NEXT = SessionCommand(ACTION_PLAY_NEXT, Bundle.EMPTY)
+    val ADD_TO_QUEUE = SessionCommand(ACTION_ADD_TO_QUEUE, Bundle.EMPTY)
+    val QUEUE_MOVE = SessionCommand(ACTION_QUEUE_MOVE, Bundle.EMPTY)
+    val QUEUE_CLEAR = SessionCommand(ACTION_QUEUE_CLEAR, Bundle.EMPTY)
 }
 
 @UnstableApi
@@ -102,6 +116,7 @@ class PlaybackService : MediaLibraryService() {
     private lateinit var radio: RadioController
     private lateinit var tracker: PlaybackTracker
     private lateinit var queueStore: QueueStore
+    private lateinit var queueEditor: QueueEditor
     private lateinit var autoLibrary: AutoLibrary
     private val searchResults = mutableMapOf<String, List<MediaItem>>()
     private var retryCount = 0
@@ -182,6 +197,7 @@ class PlaybackService : MediaLibraryService() {
         smartShuffle = SmartShuffleController(player, c.recommender, c.downloads, scope)
         tracker = PlaybackTracker(player, c.library, scope)
         queueStore = QueueStore(File(filesDir, "queue.json"), scope)
+        queueEditor = QueueEditor(player)
         autoLibrary = AutoLibrary(this)
 
         player.addListener(ServiceListener())
@@ -620,6 +636,10 @@ class PlaybackService : MediaLibraryService() {
                 .add(LyraCommands.SHUFFLE)
                 .add(LyraCommands.REPEAT)
                 .add(LyraCommands.RADIO_HERE)
+                .add(LyraCommands.PLAY_NEXT)
+                .add(LyraCommands.ADD_TO_QUEUE)
+                .add(LyraCommands.QUEUE_MOVE)
+                .add(LyraCommands.QUEUE_CLEAR)
                 .build()
             return MediaSession.ConnectionResult.accept(commands, MediaSession.ConnectionResult.DEFAULT_PLAYER_COMMANDS)
         }
@@ -672,6 +692,21 @@ class PlaybackService : MediaLibraryService() {
                     radio.start(song)
                     setContext("Radio de ${song.title}", "radio:${song.id}")
                 }
+                LyraCommands.ACTION_PLAY_NEXT, LyraCommands.ACTION_ADD_TO_QUEUE -> {
+                    val songs = args.getString(LyraCommands.ARG_SONGS)
+                        ?.let { runCatching { json.decodeFromString(ListSerializer(Song.serializer()), it) }.getOrNull() }
+                        .orEmpty()
+                    if (songs.isNotEmpty()) {
+                        // Sin nada sonando, lo añadido pasa a ser la cola (sin la marca de «En cola»).
+                        val empty = player.mediaItemCount == 0
+                        if (empty) setContext(null, null)
+                        val items = songs.map { it.toMediaItem(container.downloads.localCover(it.id), queued = !empty) }
+                        queueEditor.insert(items, next = customCommand.customAction == LyraCommands.ACTION_PLAY_NEXT)
+                    }
+                }
+                LyraCommands.ACTION_QUEUE_MOVE ->
+                    queueEditor.moveUpcoming(args.getInt(LyraCommands.ARG_MOVE_FROM, -1), args.getInt(LyraCommands.ARG_MOVE_TO, -1))
+                LyraCommands.ACTION_QUEUE_CLEAR -> queueEditor.clearUpcoming()
             }
             return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
         }

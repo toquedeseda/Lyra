@@ -1,5 +1,7 @@
 package com.lyra.music.ui.components
 
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Composable
@@ -93,15 +95,18 @@ fun Modifier.reorderItem(state: ReorderState, index: Int): Modifier =
 @Composable
 fun Modifier.reorderHandle(state: ReorderState, index: Int): Modifier {
     val currentIndex by rememberUpdatedState(index)
-    return this.pointerInput(state) {
-        detectDragGestures(
-            onDragStart = { state.start(currentIndex) },
-            onDrag = { change, amount ->
-                change.consume()
-                state.drag(amount.y)
-            },
-            onDragEnd = { state.end() },
-            onDragCancel = { state.end() },
-        )
-    }
+    return this
+        // Tocar el asa no es tocar la fila: ni pone esa canción ni, al mantenerla, abre su menú.
+        .pointerInput(Unit) { awaitEachGesture { awaitFirstDown(requireUnconsumed = false).consume() } }
+        .pointerInput(state) {
+            detectDragGestures(
+                onDragStart = { state.start(currentIndex) },
+                onDrag = { change, amount ->
+                    change.consume()
+                    state.drag(amount.y)
+                },
+                onDragEnd = { state.end() },
+                onDragCancel = { state.end() },
+            )
+        }
 }

@@ -10,6 +10,7 @@ import com.lyra.music.data.download.DownloadRepository
 import com.lyra.music.data.model.Song
 import com.lyra.music.data.repo.Recommender
 import com.lyra.music.playback.MediaItems.isRadio
+import com.lyra.music.playback.MediaItems.isQueued
 import com.lyra.music.playback.MediaItems.isRecommended
 import com.lyra.music.playback.MediaItems.toMediaItem
 import com.lyra.music.playback.MediaItems.toSong
@@ -86,8 +87,13 @@ class SmartShuffleController(
     private fun insert(songs: List<Song>) {
         val before = playOrder()
         val position = before.indexOf(player.currentMediaItemIndex)
-        val head = if (position >= 0) before.take(position + 1) else emptyList()
-        val rest = if (position >= 0) before.drop(position + 1) else before
+        // Lo que has añadido tú a la cola va primero, sin recomendadas en medio (como en Spotify).
+        var queued = 0
+        if (position >= 0) {
+            while (position + 1 + queued < before.size && player.getMediaItemAt(before[position + 1 + queued]).isQueued()) queued++
+        }
+        val head = if (position >= 0) before.take(position + 1 + queued) else emptyList()
+        val rest = if (position >= 0) before.drop(position + 1 + queued) else before
         val usable = songs.take((rest.size / EVERY).coerceAtLeast(1))
         val firstNew = player.mediaItemCount
         busy = true

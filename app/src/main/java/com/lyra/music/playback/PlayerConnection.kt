@@ -8,9 +8,11 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
 import androidx.media3.session.MediaController
+import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionToken
 import com.lyra.music.data.download.DownloadRepository
 import com.lyra.music.data.model.Song
+import com.lyra.music.playback.MediaItems.isQueued
 import com.lyra.music.playback.MediaItems.isRadio
 import com.lyra.music.playback.MediaItems.isRecommended
 import com.lyra.music.playback.MediaItems.toMediaItem
@@ -28,6 +30,7 @@ import kotlinx.coroutines.guava.await
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 
 data class PlayerUiState(
@@ -48,6 +51,8 @@ data class PlayerUiState(
     val recommendedIds: Set<String> = emptySet(),
     /** Canciones que ha añadido la radio al acabarse la lista. */
     val radioIds: Set<String> = emptySet(),
+    /** Posiciones (en la lista) de las que has añadido tú a la cola: «En cola». */
+    val queuedIndices: Set<Int> = emptySet(),
     /** Sin cobertura: la música espera a que vuelva la señal (y sigue sola). */
     val waitingForNetwork: Boolean = false,
 )
@@ -175,20 +180,19 @@ class PlayerConnection(
         c.play()
     }
 
-    fun playNext(songs: List<Song>) = command { c ->
-        if (c.mediaItemCount == 0) {
-            play(songs)
-        } else {
-            val at = (c.currentMediaItemIndex + 1).coerceAtMost(c.mediaItemCount)
-            c.addMediaItems(at, songs.map { it.toMediaItem(downloads.localCover(it.id)) })
-        }
-    }
+    /** Justo detrás de la que suena (como en Spotify; con aleatorio también). Lo coloca el servicio. */
+    fun playNext(songs: List<Song>) = sendSongs(LyraCommands.PLAY_NEXT, songs)
 
-    fun addToQueue(songs: List<Song>) = command { c ->
-        if (c.mediaItemCount == 0) {
-            play(songs)
-        } else {
-            c.addMediaItems(songs.map { it.toMediaItem(downloads.localCover(it.id)) })
+    /** Detrás de la que suena y de lo que ya añadiste, antes que el resto de la lista. */
+    fun addToQueue(songs: List<Song>) = sendSongs(LyraCommands.ADD_TO_QUEUE, songs)
+
+    private fun sendSongs(command: SessionCommand, songs: List<Song>) {
+        if (songs.isEmpty()) return
+        command { c ->
+            c.sendCustomCommand(
+                command,
+                Bundle().apply { putString(LyraCommands.ARG_SONGS, json.encodeToString(ListSerializer(Song.serializer()), songs)) },
+            )
         }
     }
 
@@ -252,18 +256,23 @@ class PlayerConnection(
         }
     }
 
-    fun move(from: Int, to: Int) = command { c ->
-        if (from in 0 until c.mediaItemCount && to in 0 until c.mediaItemCount) c.moveMediaItem(from, to)
+    /** Mueve una de las que vienen: posiciones entre las que vienen (0 = la siguiente), como se ven en la cola. */
+    fun moveUpcoming(from: Int, to: Int) = command { c ->
+        c.sendCustomCommand(
+            LyraCommands.QUEUE_MOVE,
+            Bundle().apply {
+                putInt(LyraCommands.ARG_MOVE_FROM, from)
+                putInt(LyraCommands.ARG_MOVE_TO, to)
+            },
+        )
     }
 
     fun remove(index: Int) = command { c ->
         if (index in 0 until c.mediaItemCount && index != c.currentMediaItemIndex) c.removeMediaItem(index)
     }
 
-    fun clearUpcoming() = command { c ->
-        val from = c.currentMediaItemIndex + 1
-        if (from < c.mediaItemCount) c.removeMediaItems(from, c.mediaItemCount)
-    }
+    /** Quita todo lo que viene después (también con aleatorio, en el orden de verdad). */
+    fun clearUpcoming() = command { c -> c.sendCustomCommand(LyraCommands.QUEUE_CLEAR, Bundle.EMPTY) }
 
     fun toggleShuffle() = command { it.shuffleModeEnabled = !it.shuffleModeEnabled }
 
@@ -322,7 +331,10 @@ class PlayerConnection(
         val songs = items.mapNotNull { it.toSong() }
         val recommended = items.filter { it.isRecommended() }.mapTo(HashSet()) { it.mediaId }
         val radio = items.filter { it.isRadio() }.mapTo(HashSet()) { it.mediaId }
-        _state.update { it.copy(queue = songs, currentIndex = c.currentMediaItemIndex, recommendedIds = recommended, radioIds = radio) }
+        val queued = items.indices.filterTo(HashSet()) { items[it].isQueued() }
+        _state.update {
+            it.copy(queue = songs, currentIndex = c.currentMediaItemIndex, recommendedIds = recommended, radioIds = radio, queuedIndices = queued)
+        }
     }
 
     /** Orden real de reproducción (tiene en cuenta el modo aleatorio). */

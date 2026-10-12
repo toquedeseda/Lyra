@@ -3,6 +3,7 @@ package com.lyra.music.ui.player
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -89,11 +90,8 @@ fun QueueSheet(onDismiss: () -> Unit) {
         listState = listState,
         firstIndex = 2,
         onMove = { from, to -> if (from in upcoming.indices && to in upcoming.indices) upcoming.add(to, upcoming.removeAt(from)) },
-        onDrop = { from, to ->
-            // En la cola real las posiciones van seguidas tras la actual (sin aleatorio).
-            val base = state.currentIndex + 1
-            player.move(base + from, base + to)
-        },
+        // Se mueve en el orden de verdad (también con aleatorio): queda donde se suelta.
+        onDrop = { from, to -> player.moveUpcoming(from, to) },
     )
 
     ModalBottomSheet(
@@ -113,8 +111,7 @@ fun QueueSheet(onDismiss: () -> Unit) {
                         Text(
                             when {
                                 state.shuffle && settings.smartShuffle -> "Aleatorio inteligente · las marcadas con ✦ son recomendadas"
-                                state.shuffle -> "Aleatorio activado · desactívalo para reordenar"
-                                else -> "Mantén el asa para reordenar · desliza para quitar"
+                                else -> "Arrastra desde el asa para reordenar · desliza para quitar"
                             },
                             style = MaterialTheme.typography.bodySmall,
                             color = LyraColors.TextSecondary,
@@ -180,38 +177,31 @@ fun QueueSheet(onDismiss: () -> Unit) {
                             entry.song,
                             onClick = { player.skipTo(entry.index) },
                             queueIndex = entry.index,
-                            trailing = when {
-                                !state.shuffle -> {
-                                    {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            if (entry.song.id in state.radioIds) RadioMark()
-                                            Icon(
-                                                Icons.Rounded.DragHandle,
-                                                "Arrastrar",
-                                                tint = LyraColors.TextSecondary,
-                                                modifier = Modifier
-                                                    .padding(12.dp)
-                                                    .size(24.dp)
-                                                    .reorderHandle(reorder, position),
-                                            )
-                                        }
-                                    }
-                                }
-                                entry.song.id in state.radioIds -> {
-                                    { RadioMark(Modifier.padding(end = 16.dp)) }
-                                }
-                                entry.song.id in state.recommendedIds -> {
-                                    {
-                                        // Marca de recomendada y el menú de siempre (para añadirla a una playlist, etc.).
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            trailing = {
+                                // Las marcas (añadida por ti, de la radio, recomendada) y el asa para
+                                // reordenar, que ya funciona también con el aleatorio puesto.
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    when {
+                                        entry.index in state.queuedIndices -> QueuedMark()
+                                        entry.song.id in state.radioIds -> RadioMark()
+                                        entry.song.id in state.recommendedIds -> {
+                                            // Recomendada: el menú de siempre (para añadirla a una playlist, etc.).
                                             Icon(Icons.Rounded.AutoAwesome, "Recomendada", tint = LyraColors.Accent, modifier = Modifier.size(16.dp))
                                             IconButton(onClick = { actions.songMenu = SongMenuRequest(entry.song, queueIndex = entry.index) }) {
                                                 Icon(Icons.Outlined.MoreVert, "Más opciones", tint = LyraColors.TextTertiary, modifier = Modifier.size(20.dp))
                                             }
                                         }
                                     }
+                                    Icon(
+                                        Icons.Rounded.DragHandle,
+                                        "Arrastrar",
+                                        tint = LyraColors.TextSecondary,
+                                        modifier = Modifier
+                                            .padding(12.dp)
+                                            .size(24.dp)
+                                            .reorderHandle(reorder, position),
+                                    )
                                 }
-                                else -> null
                             },
                         )
                     }
@@ -219,6 +209,20 @@ fun QueueSheet(onDismiss: () -> Unit) {
             }
         }
     }
+}
+
+/** Marca de las canciones que has añadido tú a la cola (como en Spotify, van antes que el resto). */
+@Composable
+private fun QueuedMark() {
+    Text(
+        "En cola",
+        style = MaterialTheme.typography.labelSmall,
+        color = LyraColors.Accent,
+        modifier = Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(LyraColors.Accent.copy(alpha = 0.14f))
+            .padding(horizontal = 7.dp, vertical = 3.dp),
+    )
 }
 
 /** Marca de las canciones que ha añadido la radio detrás de tu lista. */
