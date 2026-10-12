@@ -124,7 +124,15 @@ fun MainContent(actions: LyraActions, onToggleMini: () -> Unit) {
                             Spacer(Modifier.width(8.dp))
                             Column(Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(10.dp)).background(LyraColors.Surface)) {
                                 TopBar()
-                                Box(Modifier.weight(1f).fillMaxWidth()) { ScreenHost() }
+                                Box(Modifier.weight(1f).fillMaxWidth()) {
+                                    ScreenHost()
+                                    if (actions.nav.current.screen == Screen.Home) {
+                                        HelpUsButton(
+                                            onClick = { actions.helpUsOpen = true },
+                                            modifier = Modifier.align(Alignment.BottomEnd).padding(end = 20.dp, bottom = 18.dp),
+                                        )
+                                    }
+                                }
                             }
                             if (showRight) {
                                 Spacer(Modifier.width(8.dp))
@@ -344,6 +352,7 @@ private fun Dialogs() {
     }
     actions.addToPlaylist?.let { songs -> AddToPlaylistDialog(songs) }
     actions.spotifyImport?.let { initial -> SpotifyImportDialog(initial) }
+    if (actions.helpUsOpen) HelpUsDialog()
     WhatsNew()
 }
 
@@ -352,14 +361,20 @@ private fun Dialogs() {
 private fun WhatsNew() {
     val app = LocalActions.current.app
     var notes by remember { mutableStateOf<String?>(null) }
+    var helpUsIntro by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         val seen = app.settings.current.lastSeenVersion
         val version = com.lyra.desktop.BuildInfo.VERSION
         if (seen == version) return@LaunchedEffect
-        app.settings.update { it.copy(lastSeenVersion = version) }
-        // Recién instalada no hay «novedades»: solo después de actualizar.
-        if (seen.isNotEmpty()) notes = app.updater.notesFor(version)
+        val introSeen = app.settings.current.helpUsIntroSeen
+        app.settings.update { it.copy(lastSeenVersion = version, helpUsIntroSeen = true) }
+        // Recién instalada no hay «novedades»: solo después de actualizar. La primera vez, en vez de
+        // las novedades, el aviso grande de «Ayúdanos».
+        if (seen.isNotEmpty()) {
+            if (!introSeen) helpUsIntro = true else notes = app.updater.notesFor(version)
+        }
     }
+    if (helpUsIntro) HelpUsIntro(onClose = { helpUsIntro = false })
     val text = notes ?: return
     OverlayDialog(onDismiss = { notes = null }, width = 520.dp) {
         Column {

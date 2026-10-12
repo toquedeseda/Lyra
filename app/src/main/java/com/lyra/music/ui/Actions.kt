@@ -60,6 +60,9 @@ class LyraActions(
     var songMenu by mutableStateOf<SongMenuRequest?>(null)
     var addToPlaylist by mutableStateOf<List<Song>?>(null)
     var nowPlayingOpen by mutableStateOf(false)
+
+    /** El formulario de «Ayúdanos» (errores, ideas…) está abierto. */
+    var helpUsOpen by mutableStateOf(false)
     var queueOpen by mutableStateOf(false)
     var lyricsOpen by mutableStateOf(false)
 

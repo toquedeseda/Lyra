@@ -58,6 +58,9 @@ class LyraActions(val app: AppContainer, val nav: Navigator) {
     var confirmRequest by mutableStateOf<ConfirmRequest?>(null)
     var spotifyImport by mutableStateOf<String?>(null)
 
+    /** El formulario de «Ayúdanos» (errores, ideas…) está abierto. */
+    var helpUsOpen by mutableStateOf(false)
+
     /** Pide que el buscador de arriba coja el foco (Ctrl+F). */
     var focusSearch by mutableStateOf(0)
 

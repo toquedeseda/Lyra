@@ -115,6 +115,9 @@ import com.lyra.music.ui.settings.SettingsScreen
 import com.lyra.music.ui.theme.LyraColors
 import com.lyra.music.ui.update.UpdateDialog
 import com.lyra.music.ui.update.WhatsNewDialog
+import com.lyra.music.ui.feedback.HelpUsButton
+import com.lyra.music.ui.feedback.HelpUsIntroDialog
+import com.lyra.music.ui.feedback.HelpUsSheet
 import com.lyra.music.update.UpdateState
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -218,6 +221,7 @@ fun LyraRoot(container: AppContainer) {
 
     // Actualizaciones al abrir y "Novedades" tras actualizar.
     var whatsNew by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var helpUsIntro by remember { mutableStateOf(false) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(settings.loaded, settings.checkUpdates) {
         if (!settings.loaded || !settings.checkUpdates) return@LaunchedEffect
@@ -233,9 +237,11 @@ fun LyraRoot(container: AppContainer) {
         val current = container.updates.currentVersion
         if (settings.lastSeenVersion != current) {
             if (settings.lastSeenVersion.isNotEmpty()) {
-                container.updates.notesFor(current)?.let { whatsNew = current to it }
+                // La primera vez tras actualizar, en vez de las novedades, el aviso grande de «Ayúdanos».
+                if (!settings.helpUsIntroSeen) helpUsIntro = true
+                else container.updates.notesFor(current)?.let { whatsNew = current to it }
             }
-            container.settings.update { it.copy(lastSeenVersion = current) }
+            container.settings.update { it.copy(lastSeenVersion = current, helpUsIntroSeen = true) }
         }
     }
 
@@ -279,7 +285,17 @@ fun LyraRoot(container: AppContainer) {
                             popEnterTransition = { popEnterFor(settings.screenTransition) },
                             popExitTransition = { popExitFor(settings.screenTransition) },
                         ) {
-                            screen<HomeRoute> { HomeScreen(padding) }
+                            screen<HomeRoute> {
+                                Box(Modifier.fillMaxSize()) {
+                                    HomeScreen(padding)
+                                    HelpUsButton(
+                                        onClick = { actions.helpUsOpen = true },
+                                        modifier = Modifier
+                                            .align(Alignment.BottomEnd)
+                                            .padding(end = 16.dp, bottom = padding.calculateBottomPadding() + 14.dp),
+                                    )
+                                }
+                            }
                             screen<SearchRoute> { SearchScreen(padding) }
                             screen<LibraryRoute> { LibraryScreen(padding) }
                             screen<AlbumRoute> { AlbumScreen(it.toRoute<AlbumRoute>().id, padding) }
@@ -359,6 +375,16 @@ fun LyraRoot(container: AppContainer) {
                         else -> Unit
                     }
                     whatsNew?.let { (version, notes) -> WhatsNewDialog(version, notes, onDismiss = { whatsNew = null }) }
+                    if (helpUsIntro) {
+                        HelpUsIntroDialog(
+                            onTry = {
+                                helpUsIntro = false
+                                actions.helpUsOpen = true
+                            },
+                            onDismiss = { helpUsIntro = false },
+                        )
+                    }
+                    if (actions.helpUsOpen) HelpUsSheet(onDismiss = { actions.helpUsOpen = false })
                     crash?.let {
                         androidx.compose.material3.AlertDialog(
                             onDismissRequest = { crash = null },

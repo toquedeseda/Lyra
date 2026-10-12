@@ -114,6 +114,8 @@ fun SettingsScreen(contentPadding: PaddingValues) {
     Column(Modifier.fillMaxSize()) {
         PageHeader("Ajustes", "Reproducción, descargas, isla y copias de seguridad.")
         LazyColumn(contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding() + 24.dp)) {
+            item { Group("Ayúdanos") }
+            item { NavRow("Cuéntanos un error o una idea", "Nos llega al momento y lo leemos todo") { actions.helpUsOpen = true } }
             item { Group("Reproducción") }
             item { NavRow("Calidad de streaming", qualityLabel(s.streamQuality)) { qualityDialog = "stream" } }
             // Como en Spotify: un interruptor y, si está activado, los segundos del fundido.

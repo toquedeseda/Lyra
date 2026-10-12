@@ -55,6 +55,7 @@ import com.lyra.desktop.data.DesktopSettings
 import com.lyra.desktop.system.WindowsSystem
 import com.lyra.desktop.ui.LocalActions
 import com.lyra.desktop.ui.LyraColors
+import com.lyra.desktop.ui.components.FilledPill
 import com.lyra.desktop.ui.components.FilterChip
 import com.lyra.desktop.ui.components.HoverBox
 import com.lyra.desktop.ui.components.OutlinePill
@@ -77,6 +78,13 @@ fun SettingsScreen() {
     ScreenList {
         item {
             Text("Ajustes", style = MaterialTheme.typography.displayMedium, color = LyraColors.TextPrimary, modifier = Modifier.padding(start = PagePadding, top = 8.dp, bottom = 8.dp))
+        }
+        item {
+            Group("Ayúdanos") {
+                SettingRow("Cuéntanos un error o una idea", "Nos llega al momento y lo leemos todo.") {
+                    FilledPill("Escribir", onClick = { actions.helpUsOpen = true })
+                }
+            }
         }
         item {
             Group("Sonido") {

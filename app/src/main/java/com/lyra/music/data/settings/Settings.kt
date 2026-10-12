@@ -81,6 +81,8 @@ data class AppSettings(
     val checkUpdates: Boolean = true,
     val lastSeenVersion: String = "",
     val batteryTipDismissed: Boolean = false,
+    /** Ya se enseñó (una vez, al actualizar) el aviso grande del botón «Ayúdanos». */
+    val helpUsIntroSeen: Boolean = false,
 )
 
 private val Context.settingsStore by preferencesDataStore(name = "settings")
@@ -151,6 +153,7 @@ class SettingsRepository(context: Context, scope: CoroutineScope) {
         checkUpdates = p[K.checkUpdates] ?: true,
         lastSeenVersion = p[K.lastSeenVersion] ?: "",
         batteryTipDismissed = p[K.batteryTip] ?: false,
+        helpUsIntroSeen = p[K.helpUsIntroSeen] ?: false,
     )
 
     private fun write(p: MutablePreferences, s: AppSettings) {
@@ -191,6 +194,7 @@ class SettingsRepository(context: Context, scope: CoroutineScope) {
         p[K.checkUpdates] = s.checkUpdates
         p[K.lastSeenVersion] = s.lastSeenVersion
         p[K.batteryTip] = s.batteryTipDismissed
+        p[K.helpUsIntroSeen] = s.helpUsIntroSeen
     }
 
     /** Todos los ajustes como texto, para la copia de seguridad. */
@@ -276,6 +280,7 @@ class SettingsRepository(context: Context, scope: CoroutineScope) {
         val checkUpdates = booleanPreferencesKey("checkUpdates")
         val lastSeenVersion = stringPreferencesKey("lastSeenVersion")
         val batteryTip = booleanPreferencesKey("batteryTip")
+        val helpUsIntroSeen = booleanPreferencesKey("helpUsIntroSeen")
     }
 }
 

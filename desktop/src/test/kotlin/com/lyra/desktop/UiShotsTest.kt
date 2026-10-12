@@ -1,6 +1,9 @@
 package com.lyra.desktop
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.geometry.Offset
@@ -12,6 +15,7 @@ import coil3.SingletonImageLoader
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import com.lyra.desktop.system.TaskbarButtons
 import com.lyra.desktop.ui.FullScreenPlayer
+import com.lyra.desktop.ui.HelpUsIntro
 import com.lyra.desktop.ui.LocalActions
 import com.lyra.desktop.ui.LyraActions
 import com.lyra.desktop.ui.MainContent
@@ -29,6 +33,7 @@ import java.io.File
  * la rueda del ratón en el centro antes de capturar; «home@1040» usa una ventana de 1040 de ancho y
  * «home+update» enseña el botón de «Reiniciar para actualizar». «pantalla» es la pantalla completa
  * (con la cola guardada de la versión de pruebas) e «iconos» guarda los de la barra de tareas.
+ * «home+ayuda» abre el formulario de «Ayúdanos» y «home+aviso», el aviso grande que sale al actualizar.
  */
 class UiShotsTest {
 
@@ -56,10 +61,12 @@ class UiShotsTest {
             val base = entry.substringBefore('~')
             val wheel = entry.substringAfter('~', "0").toIntOrNull() ?: 0
             val width = Regex("""@(\d+)""").find(base)?.groupValues?.get(1)?.toInt() ?: 1280
-            val name = base.replace("+update", "").replace("+controles", "").replace(Regex("""@\d+"""), "")
+            val name = base.replace("+update", "").replace("+controles", "").replace("+ayuda", "").replace("+aviso", "")
+                .replace(Regex("""@\d+"""), "")
             app.updater.showForTest(if ("+update" in base) UpdateState.Ready("9.9.9", "", File("prueba.msi")) else UpdateState.None)
             val nav = Navigator()
             val actions = LyraActions(app, nav)
+            actions.helpUsOpen = "+ayuda" in base
             when {
                 name == "home" -> Unit
                 name == "ajustes" -> nav.navigate(Screen.Settings)
@@ -74,7 +81,14 @@ class UiShotsTest {
             }
             ImageComposeScene(width, 820, Density(1f)) {
                 CompositionLocalProvider(LocalActions provides actions) {
-                    if (name == "pantalla") FullScreenPlayer(actions, onExit = {}) else MainContent(actions, onToggleMini = {})
+                    if (name == "pantalla") {
+                        FullScreenPlayer(actions, onExit = {})
+                    } else {
+                        Box(Modifier.fillMaxSize()) {
+                            MainContent(actions, onToggleMini = {})
+                            if ("+aviso" in base) HelpUsIntro(onClose = {})
+                        }
+                    }
                 }
             }.use { scene ->
                 // Unos segundos para que lleguen los datos y las portadas.

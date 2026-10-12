@@ -85,6 +85,8 @@ class AppContainer(val app: Application) {
     }
     val updates by lazy { UpdateRepository(app, http, scope) }
     val sharing by lazy { com.lyra.music.data.share.PlaylistSharing(http) }
+    /** «Ayúdanos»: errores e ideas que la gente manda al servidor de la web. */
+    val feedback by lazy { com.lyra.music.data.feedback.FeedbackSender(http) }
     val backup by lazy { BackupManager(app, database, settings, downloads) }
     val spotifyImport by lazy {
         com.lyra.music.data.repo.SpotifyImportManager(

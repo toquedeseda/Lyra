@@ -75,6 +75,8 @@ class AppContainer {
     val lyrics = LyricsRepository(Lrclib(http), innerTube, Paths.lyricsCache)
     val home = HomeRepository(music, library, Paths.homeCache, scope)
     val sharing = PlaylistSharing(http)
+    /** «Ayúdanos»: errores e ideas que la gente manda al servidor de la web. */
+    val feedback = com.lyra.music.data.feedback.FeedbackSender(http)
     val spotify = SpotifyImporter(http, innerTube)
     val updater = com.lyra.desktop.update.Updater(http, scope) { settings.current.checkUpdates }
     val sync = com.lyra.desktop.sync.SyncManager(http, library, settings, File(Paths.data, "sincronizacion.json"), scope)

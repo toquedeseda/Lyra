@@ -99,6 +99,8 @@ data class DesktopSettings(
     val cacheLimitMb: Int = 1024,
     val checkUpdates: Boolean = true,
     val lastSeenVersion: String = "",
+    /** Ya se enseñó (una vez, al actualizar) el aviso grande del botón «Ayúdanos». */
+    val helpUsIntroSeen: Boolean = false,
     /** Ya se cerró la tarjeta del Inicio que invita a sincronizar con el móvil. */
     val syncHintDismissed: Boolean = false,
     val language: String = "es",
